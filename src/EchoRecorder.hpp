@@ -61,6 +61,7 @@ struct FrameRecord {
 struct AttemptRecord {
     std::uint64_t attemptId = 0;
     std::vector<FrameRecord> frames;
+    std::uint64_t framesDropped = 0;
     double durationSeconds = 0.0;
     float maxProgressPercent = 0.0f;
     AttemptEndReason endReason = AttemptEndReason::Active;
@@ -95,6 +96,7 @@ public:
     [[nodiscard]] bool hasActiveAttempt() const;
     [[nodiscard]] double activeElapsedSeconds() const;
     [[nodiscard]] AttemptRecord const* activeAttempt() const;
+    [[nodiscard]] AttemptRecord const* attemptById(std::uint64_t attemptId) const;
     [[nodiscard]] AttemptRecord const* latestFinalizedAttempt() const;
     [[nodiscard]] AttemptRecord const* personalBestAttempt() const;
     [[nodiscard]] std::deque<AttemptRecord> const& attempts() const;
