@@ -19,7 +19,7 @@ public:
 
     bool attach(cocos2d::CCNode* parent, int zOrder);
     void play(AttemptRecord const* attempt);
-    void update(float dt);
+    void synchronize(double timeSeconds);
     void stop();
     void hide();
 
@@ -47,7 +47,20 @@ private:
         ColorRGB color2;
     };
 
-    void applyFrame(FrameRecord const& frame);
+    void seekFrameCursor(double timeSeconds);
+    void applyInterpolatedFrame(
+        FrameRecord const& from,
+        FrameRecord const& to,
+        float alpha
+    );
+    void applyInterpolatedSnapshot(
+        SimplePlayer* ghost,
+        PlayerSnapshot const& from,
+        PlayerSnapshot const& to,
+        bool continuous,
+        float alpha,
+        VisualCache& cache
+    );
     void applySnapshot(
         SimplePlayer* ghost,
         PlayerSnapshot const& snapshot,
@@ -63,12 +76,15 @@ private:
     void loadIconProfile();
     void resetVisualCaches();
 
+    static float interpolateRotation(float from, float to, float alpha);
+    static ColorRGB interpolateColor(ColorRGB const& from, ColorRGB const& to, float alpha);
+
     SimplePlayer* m_player1Ghost = nullptr;
     SimplePlayer* m_player2Ghost = nullptr;
 
     AttemptRecord const* m_attempt = nullptr;
     std::size_t m_frameIndex = 0;
-    double m_elapsedSeconds = 0.0;
+    double m_lastSynchronizedTime = 0.0;
     std::uint64_t m_sourceAttemptId = 0;
 
     IconProfile m_icons;
