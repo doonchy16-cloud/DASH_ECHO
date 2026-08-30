@@ -36,14 +36,40 @@ void EchoReplaySession::start() {
         bindGhostToOwnedClip();
     }
     m_timeline.start();
-    m_ghost.synchronize(m_timeline.cursorSeconds());
+    synchronizeGhost();
+}
+
+void EchoReplaySession::pause() {
+    if (!m_timeline.isLoaded()) return;
+    m_timeline.pause();
+    synchronizeGhost();
+}
+
+void EchoReplaySession::resume() {
+    if (!m_timeline.isLoaded()) return;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    m_timeline.resume();
+    synchronizeGhost();
+}
+
+void EchoReplaySession::togglePlayback() {
+    if (!m_timeline.isLoaded()) return;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    m_timeline.togglePlayback();
+    synchronizeGhost();
 }
 
 void EchoReplaySession::advance(float dt) {
     if (!m_timeline.isPlaying()) return;
 
     m_timeline.advance(dt);
-    m_ghost.synchronize(m_timeline.cursorSeconds());
+    synchronizeGhost();
 }
 
 void EchoReplaySession::restart() {
@@ -51,7 +77,7 @@ void EchoReplaySession::restart() {
 
     m_timeline.restart();
     bindGhostToOwnedClip();
-    m_ghost.synchronize(m_timeline.cursorSeconds());
+    synchronizeGhost();
 }
 
 void EchoReplaySession::stop() {
@@ -64,6 +90,58 @@ void EchoReplaySession::stop() {
 void EchoReplaySession::clear() {
     m_ghost.stop();
     m_timeline.clear();
+}
+
+bool EchoReplaySession::setPlaybackRate(float rate) {
+    if (!m_timeline.setPlaybackRate(rate)) return false;
+    synchronizeGhost();
+    return true;
+}
+
+void EchoReplaySession::cyclePlaybackRate() {
+    if (!m_timeline.isLoaded()) return;
+    m_timeline.cyclePlaybackRate();
+    synchronizeGhost();
+}
+
+bool EchoReplaySession::seekSeconds(double timeSeconds) {
+    if (!m_timeline.seekSeconds(timeSeconds)) return false;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    synchronizeGhost();
+    return true;
+}
+
+bool EchoReplaySession::seekNormalized(float normalizedPosition) {
+    if (!m_timeline.seekNormalized(normalizedPosition)) return false;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    synchronizeGhost();
+    return true;
+}
+
+bool EchoReplaySession::stepPreviousFrame() {
+    if (!m_timeline.stepPreviousFrame()) return false;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    synchronizeGhost();
+    return true;
+}
+
+bool EchoReplaySession::stepNextFrame() {
+    if (!m_timeline.stepNextFrame()) return false;
+
+    if (!m_ghost.isPlaying()) {
+        bindGhostToOwnedClip();
+    }
+    synchronizeGhost();
+    return true;
 }
 
 bool EchoReplaySession::isAttached() const {
@@ -95,6 +173,11 @@ void EchoReplaySession::bindGhostToOwnedClip() {
 
     m_ghost.setOpacity(kReplayOpacity);
     m_ghost.play(attempt);
+}
+
+void EchoReplaySession::synchronizeGhost() {
+    if (!m_timeline.isLoaded() || !m_ghost.isPlaying()) return;
+    m_ghost.synchronize(m_timeline.cursorSeconds());
 }
 
 } // namespace dash_echo
