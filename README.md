@@ -27,7 +27,7 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - **v0.5:** confirmed-death intelligence, clustering, heatmap, and optional markers
 - **v0.6:** immutable 4,096-entry attempt-history authority independent from replay retention
 - **v0.7:** owned immutable replay clip + deterministic replay timeline + dedicated replay ghost session
-- **v0.8:** interactive Replay Studio with pause/resume, restart, normalized scrubbing, distinct-frame stepping, and 0.10x / 0.25x / 0.50x / 1.00x / 2.00x playback
+- **v0.8:** interactive Replay Studio with pause/resume, restart, normalized scrubbing, distinct-frame stepping, five playback speeds, and recorded viewport reproduction
 
 ### v0.8 key architecture
 
@@ -37,6 +37,9 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - `EchoReplaySession` immediately re-synchronizes the dedicated replay ghost after every cursor-changing command
 - `EchoReplayControls` is presentation-only: launcher, labels, buttons, and native Geometry Dash `Slider`
 - normalized slider values are commands into the timeline; slider state is refreshed back from timeline authority
+- every recorded frame now carries the Geometry Dash object-layer viewport transform
+- Replay Studio reproduces/interpolates that recorded viewport from the same authoritative replay cursor
+- the active attempt's camera transform is snapshotted on Studio open and restored exactly on close
 - Replay Studio hides the multighost fleet while the dedicated replay ghost is active
 - DASH ECHO active-attempt recording time does not advance while Studio mode is open
 - Studio-mode death callbacks are excluded from DASH ECHO analytics to avoid contaminating historical data
