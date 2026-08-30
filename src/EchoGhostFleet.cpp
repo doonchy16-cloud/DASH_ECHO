@@ -7,16 +7,10 @@
 namespace dash_echo {
 
 bool EchoGhostFleet::attach(cocos2d::CCNode* parent, int topZOrder) {
-    if (m_attached) {
-        return true;
-    }
-    if (!parent) {
-        return false;
-    }
+    if (m_attached) return true;
+    if (!parent) return false;
 
     for (std::size_t i = 0; i < m_slots.size(); ++i) {
-        // Slot order is oldest -> newest. The newest selected attempt therefore
-        // receives the highest ghost z-order while all remain below the live player.
         int const zOrder = topZOrder - static_cast<int>(kMaxGhosts - 1 - i);
         if (!m_slots[i].ghost.attach(parent, zOrder)) {
             for (std::size_t rollback = 0; rollback <= i; ++rollback) {
@@ -39,25 +33,29 @@ void EchoGhostFleet::detach() {
     m_attached = false;
 }
 
+void EchoGhostFleet::setGhostLimit(std::size_t ghostLimit) {
+    m_ghostLimit = std::min(ghostLimit, kMaxGhosts);
+}
+
 void EchoGhostFleet::rebuild(EchoRecorder const& recorder) {
     stop();
 
     auto const* personalBest = recorder.personalBestAttempt();
     m_personalBestAttemptId = personalBest ? personalBest->attemptId : 0;
 
+    if (m_ghostLimit == 0) {
+        return;
+    }
+
     std::vector<AttemptRecord const*> selectedNewestFirst;
-    selectedNewestFirst.reserve(kMaxGhosts);
+    selectedNewestFirst.reserve(m_ghostLimit);
 
     auto const& attempts = recorder.attempts();
     for (auto it = attempts.rbegin(); it != attempts.rend(); ++it) {
-        if (!it->finalized || it->frames.empty()) {
-            continue;
-        }
+        if (!it->finalized || it->frames.empty()) continue;
 
         selectedNewestFirst.push_back(&*it);
-        if (selectedNewestFirst.size() == kMaxGhosts) {
-            break;
-        }
+        if (selectedNewestFirst.size() == m_ghostLimit) break;
     }
 
     if (personalBest) {
@@ -70,11 +68,11 @@ void EchoGhostFleet::rebuild(EchoRecorder const& recorder) {
         );
 
         if (!alreadySelected) {
-            if (selectedNewestFirst.size() < kMaxGhosts) {
+            if (selectedNewestFirst.size() < m_ghostLimit) {
                 selectedNewestFirst.push_back(personalBest);
             } else if (!selectedNewestFirst.empty()) {
-                // Preserve the strongest historical attempt by replacing the
-                // oldest member of the newest-N window, not the newest attempt.
+                // Preserve PB by replacing the oldest member of the newest-N
+                // window, never the newest historical attempt.
                 selectedNewestFirst.back() = personalBest;
             }
         }
@@ -99,7 +97,7 @@ void EchoGhostFleet::rebuild(EchoRecorder const& recorder) {
         selectedNewestFirst.end()
     );
 
-    m_activeGhosts = std::min(selectedNewestFirst.size(), kMaxGhosts);
+    m_activeGhosts = std::min(selectedNewestFirst.size(), m_ghostLimit);
     m_newestAttemptId = 0;
 
     for (std::size_t i = 0; i < m_activeGhosts; ++i) {
@@ -149,6 +147,10 @@ bool EchoGhostFleet::isAttached() const {
     return m_attached;
 }
 
+std::size_t EchoGhostFleet::ghostLimit() const {
+    return m_ghostLimit;
+}
+
 std::size_t EchoGhostFleet::activeGhostCount() const {
     return m_activeGhosts;
 }
@@ -156,6 +158,7 @@ std::size_t EchoGhostFleet::activeGhostCount() const {
 GhostFleetStats EchoGhostFleet::stats() const {
     return GhostFleetStats {
         m_activeGhosts,
+        m_ghostLimit,
         m_newestAttemptId,
         m_personalBestAttemptId
     };
