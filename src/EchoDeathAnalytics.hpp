@@ -65,6 +65,7 @@ public:
     bool recordDeath(DeathEvent event);
     void clear();
 
+    [[nodiscard]] DeathEvent const* deathForAttempt(std::uint64_t attemptId) const;
     [[nodiscard]] std::deque<DeathEvent> const& events() const;
     [[nodiscard]] std::vector<DeathCluster> const& clusters() const;
     [[nodiscard]] std::array<HeatmapBucket, kHeatmapBucketCount> const& heatmap() const;
