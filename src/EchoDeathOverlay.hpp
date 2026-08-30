@@ -14,11 +14,13 @@ namespace dash_echo {
 
 class EchoDeathOverlay final {
 public:
-    static constexpr std::size_t kMaxRenderedClusters = 24;
+    static constexpr std::size_t kMaxRenderedClusters = 32;
 
     bool attach(cocos2d::CCNode* parent, int zOrder);
     void detach();
     void setEnabled(bool enabled);
+    void setDisplay(float markerScale, bool labelsEnabled);
+    void setRenderZOrder(int zOrder);
     void refresh(EchoDeathAnalytics const& analytics);
     void clearVisuals();
 
@@ -33,6 +35,9 @@ private:
     cocos2d::CCDrawNode* m_drawNode = nullptr;
     cocos2d::CCNode* m_labelLayer = nullptr;
     bool m_enabled = true;
+    bool m_labelsEnabled = true;
+    float m_markerScale = 1.0f;
+    int m_zOrder = 0;
     std::uint64_t m_renderedRevision = 0;
 };
 
