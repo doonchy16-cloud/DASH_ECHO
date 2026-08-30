@@ -10,6 +10,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
     struct Fields {
         dash_echo::EchoRecorder recorder;
         dash_echo::EchoGhost ghost;
+        bool captureEnabled = true;
     };
 
     void postUpdate(float dt) {
@@ -28,6 +29,14 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             }
 
             ghost.attach(parent, zOrder);
+        }
+
+        if (!m_fields->captureEnabled) {
+            return;
+        }
+
+        if (!recorder.hasActiveAttempt()) {
+            recorder.beginAttempt();
         }
 
         recorder.captureFrame(
@@ -54,6 +63,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
 
         PlayLayer::resetLevel();
 
+        m_fields->captureEnabled = true;
         recorder.beginAttempt();
         ghost.play(recorder.latestFinalizedAttempt());
     }
@@ -62,6 +72,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& recorder = m_fields->recorder;
         auto& ghost = m_fields->ghost;
 
+        m_fields->captureEnabled = false;
         ghost.stop();
 
         if (recorder.hasActiveAttempt()) {
@@ -75,6 +86,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& recorder = m_fields->recorder;
         auto& ghost = m_fields->ghost;
 
+        m_fields->captureEnabled = false;
         ghost.stop();
 
         if (recorder.hasActiveAttempt()) {
