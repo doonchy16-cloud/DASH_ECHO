@@ -15,17 +15,20 @@ namespace dash_echo {
 
 class EchoGhost final {
 public:
-    static constexpr std::uint8_t kGhostOpacity = 96;
+    static constexpr std::uint8_t kDefaultOpacity = 96;
 
     bool attach(cocos2d::CCNode* parent, int zOrder);
+    void detach();
     void play(AttemptRecord const* attempt);
     void synchronize(double timeSeconds);
     void stop();
     void hide();
+    void setOpacity(std::uint8_t opacity);
 
     [[nodiscard]] bool isAttached() const;
     [[nodiscard]] bool isPlaying() const;
     [[nodiscard]] std::uint64_t sourceAttemptId() const;
+    [[nodiscard]] std::uint8_t opacity() const;
 
 private:
     struct IconProfile {
@@ -73,6 +76,7 @@ private:
         ColorRGB const& color2,
         VisualCache& cache
     );
+    void applyOpacity(SimplePlayer* ghost);
     void loadIconProfile();
     void resetVisualCaches();
 
@@ -86,6 +90,7 @@ private:
     std::size_t m_frameIndex = 0;
     double m_lastSynchronizedTime = 0.0;
     std::uint64_t m_sourceAttemptId = 0;
+    std::uint8_t m_opacity = kDefaultOpacity;
 
     IconProfile m_icons;
     VisualCache m_player1Cache;
