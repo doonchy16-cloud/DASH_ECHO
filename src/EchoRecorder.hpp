@@ -54,6 +54,8 @@ struct FrameRecord {
     float progressPercent = 0.0f;
     PlayerSnapshot player1;
     PlayerSnapshot player2;
+    bool player1ContinuousFromPrevious = false;
+    bool player2ContinuousFromPrevious = false;
 };
 
 struct AttemptRecord {
@@ -91,12 +93,19 @@ public:
     void clear();
 
     [[nodiscard]] bool hasActiveAttempt() const;
+    [[nodiscard]] double activeElapsedSeconds() const;
     [[nodiscard]] AttemptRecord const* activeAttempt() const;
     [[nodiscard]] AttemptRecord const* latestFinalizedAttempt() const;
     [[nodiscard]] std::deque<AttemptRecord> const& attempts() const;
     [[nodiscard]] RecorderStats stats() const;
 
 private:
+    static bool canInterpolate(
+        PlayerSnapshot const& previous,
+        PlayerSnapshot const& current,
+        double deltaSeconds
+    );
+
     [[nodiscard]] AttemptRecord* mutableActiveAttempt();
     [[nodiscard]] PlayerSnapshot snapshotPlayer(PlayerObject* player) const;
     void trimRetention();
