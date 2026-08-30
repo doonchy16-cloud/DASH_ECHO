@@ -12,20 +12,14 @@ using namespace geode::prelude;
 namespace dash_echo {
 
 bool EchoGhost::attach(cocos2d::CCNode* parent, int zOrder) {
-    if (isAttached()) {
-        return true;
-    }
-    if (!parent) {
-        return false;
-    }
+    if (isAttached()) return true;
+    if (!parent) return false;
 
     loadIconProfile();
 
     auto* player1Ghost = SimplePlayer::create(m_icons.cube);
     auto* player2Ghost = SimplePlayer::create(m_icons.cube);
-    if (!player1Ghost || !player2Ghost) {
-        return false;
-    }
+    if (!player1Ghost || !player2Ghost) return false;
 
     applyOpacity(player1Ghost);
     applyOpacity(player2Ghost);
@@ -59,9 +53,7 @@ void EchoGhost::detach() {
 void EchoGhost::play(AttemptRecord const* attempt) {
     stop();
 
-    if (!attempt || !attempt->finalized || attempt->frames.empty()) {
-        return;
-    }
+    if (!attempt || !attempt->finalized || attempt->frames.empty()) return;
 
     m_attempt = attempt;
     m_frameIndex = 0;
@@ -70,9 +62,7 @@ void EchoGhost::play(AttemptRecord const* attempt) {
 }
 
 void EchoGhost::synchronize(double timeSeconds) {
-    if (!isPlaying()) {
-        return;
-    }
+    if (!isPlaying()) return;
 
     if (!std::isfinite(timeSeconds) || timeSeconds < 0.0) {
         hide();
@@ -85,10 +75,12 @@ void EchoGhost::synchronize(double timeSeconds) {
         return;
     }
 
-    // Recorded samples, not attempt duration, define the renderable timeline.
-    // This avoids freezing the last ghost frame if capture hit its hard frame cap.
+    // Out-of-range time hides the ghost but deliberately keeps m_attempt bound.
+    // Later replay scrubbing can therefore move back into the authoritative
+    // sample range without re-selecting/restarting this ghost.
     if (timeSeconds > frames.back().timeSeconds) {
-        stop();
+        m_lastSynchronizedTime = timeSeconds;
+        hide();
         return;
     }
 
@@ -130,12 +122,8 @@ void EchoGhost::stop() {
 }
 
 void EchoGhost::hide() {
-    if (m_player1Ghost) {
-        m_player1Ghost->setVisible(false);
-    }
-    if (m_player2Ghost) {
-        m_player2Ghost->setVisible(false);
-    }
+    if (m_player1Ghost) m_player1Ghost->setVisible(false);
+    if (m_player2Ghost) m_player2Ghost->setVisible(false);
 }
 
 void EchoGhost::setOpacity(std::uint8_t opacity) {
@@ -167,7 +155,6 @@ void EchoGhost::seekFrameCursor(double timeSeconds) {
         return;
     }
 
-    // Normal gameplay is monotonic, so this path is O(1) amortized.
     if (timeSeconds >= m_lastSynchronizedTime && timeSeconds >= frames[m_frameIndex].timeSeconds) {
         while (
             m_frameIndex + 1 < frames.size() &&
@@ -178,7 +165,6 @@ void EchoGhost::seekFrameCursor(double timeSeconds) {
         return;
     }
 
-    // Backward/non-monotonic seeks are already supported for later replay scrubbing.
     auto upper = std::upper_bound(
         frames.begin(),
         frames.end(),
@@ -227,8 +213,6 @@ void EchoGhost::applyInterpolatedSnapshot(
     VisualCache& cache
 ) {
     if (!continuous) {
-        // A discontinuity belongs to the newer sample. Hold the old state until
-        // its exact timestamp, then seekFrameCursor snaps to the new sample.
         applySnapshot(ghost, from, cache);
         return;
     }
@@ -250,9 +234,7 @@ void EchoGhost::applySnapshot(
     PlayerSnapshot const& snapshot,
     VisualCache& cache
 ) {
-    if (!ghost) {
-        return;
-    }
+    if (!ghost) return;
 
     bool const shouldShow = snapshot.present && snapshot.visible;
     if (!shouldShow) {
@@ -272,9 +254,7 @@ void EchoGhost::applySnapshot(
 }
 
 void EchoGhost::applyMode(SimplePlayer* ghost, PlayerMode mode, VisualCache& cache) {
-    if (!ghost || (cache.modeInitialized && cache.mode == mode)) {
-        return;
-    }
+    if (!ghost || (cache.modeInitialized && cache.mode == mode)) return;
 
     int iconId = m_icons.cube;
     IconType iconType = IconType::Cube;
@@ -304,17 +284,13 @@ void EchoGhost::applyColors(
     ColorRGB const& color2,
     VisualCache& cache
 ) {
-    if (!ghost) {
-        return;
-    }
+    if (!ghost) return;
 
     if (
         cache.colorsInitialized &&
         cache.color1 == color1 &&
         cache.color2 == color2
-    ) {
-        return;
-    }
+    ) return;
 
     cocos2d::ccColor3B const primary {color1.r, color1.g, color1.b};
     cocos2d::ccColor3B const secondary {color2.r, color2.g, color2.b};
@@ -327,9 +303,7 @@ void EchoGhost::applyColors(
 }
 
 void EchoGhost::applyOpacity(SimplePlayer* ghost) {
-    if (ghost) {
-        ghost->setOpacity(m_opacity);
-    }
+    if (ghost) ghost->setOpacity(m_opacity);
 }
 
 void EchoGhost::loadIconProfile() {
