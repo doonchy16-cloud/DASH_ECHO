@@ -6,6 +6,7 @@
 #include "EchoDeathOverlay.hpp"
 #include "EchoGhostFleet.hpp"
 #include "EchoRecorder.hpp"
+#include "EchoReplayControls.hpp"
 #include "EchoReplaySession.hpp"
 
 #include <algorithm>
@@ -21,8 +22,10 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         dash_echo::EchoDeathOverlay deathOverlay;
         dash_echo::EchoAttemptHistory history;
         dash_echo::EchoReplaySession replay;
+        dash_echo::EchoReplayControls* replayControls = nullptr;
         bool captureEnabled = true;
         bool settingsLoaded = false;
+        bool replayStudioOpen = false;
     };
 
     void applyDashEchoSettings() {
@@ -38,6 +41,52 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             Mod::get()->getSettingValue<bool>("death-markers");
         m_fields->deathOverlay.setEnabled(deathMarkersEnabled);
         m_fields->settingsLoaded = true;
+    }
+
+    void ensureReplayControls() {
+        if (m_fields->replayControls) return;
+
+        auto* controls = dash_echo::EchoReplayControls::create(
+            &m_fields->replay,
+            [this](bool open) {
+                m_fields->replayStudioOpen = open;
+
+                if (open) {
+                    // Historical fleet visuals are intentionally hidden while the
+                    // dedicated Replay Studio ghost is authoritative on-screen.
+                    m_fields->fleet.hide();
+                    return;
+                }
+
+                // Closing Studio returns visual authority to the active-attempt
+                // multighost fleet without advancing the recorder clock.
+                if (m_fields->recorder.hasActiveAttempt()) {
+                    m_fields->fleet.synchronize(
+                        m_fields->recorder.activeElapsedSeconds()
+                    );
+                }
+            }
+        );
+
+        if (!controls) {
+            log::warn("DASH ECHO v0.8 could not create Replay Studio controls");
+            return;
+        }
+
+        controls->setID("dash-echo-replay-controls");
+        this->addChild(controls, 10000);
+        m_fields->replayControls = controls;
+        controls->refresh();
+    }
+
+    void closeReplayStudioForLifecycle() {
+        if (m_fields->replayControls && m_fields->replayControls->isStudioOpen()) {
+            m_fields->replayControls->closeStudio();
+            return;
+        }
+
+        m_fields->replayStudioOpen = false;
+        m_fields->replay.stop();
     }
 
     bool finalizeActiveAttempt(dash_echo::AttemptEndReason reason) {
@@ -59,7 +108,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const* finalized = recorder.attemptById(attemptId);
         if (!finalized || !finalized->finalized) {
             log::warn(
-                "DASH ECHO v0.7 could not resolve finalized attempt {} for history",
+                "DASH ECHO v0.8 could not resolve finalized attempt {} for history",
                 attemptId
             );
             return false;
@@ -78,15 +127,29 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         );
         if (!committed) return false;
 
-        // v0.7 prepares, but does not auto-start, a fully owned replay clip.
-        // Once copied, this replay candidate no longer depends on recorder retention.
+        // The newest completed history entry becomes the prepared Replay Studio
+        // candidate. load() copies the frames and summary into owned replay data.
         if (auto const* entry = history.entryForAttempt(attemptId)) {
             replay.load(*finalized, *entry);
+            if (m_fields->replayControls) {
+                m_fields->replayControls->refresh();
+            }
         }
         return true;
     }
 
     void postUpdate(float dt) {
+        // v0.8 Studio mode deliberately bypasses normal PlayLayer::postUpdate.
+        // This freezes DASH ECHO active-attempt recording time while replay time
+        // advances independently inside the owned historical ReplayClip.
+        if (m_fields->replayStudioOpen) {
+            m_fields->replay.advance(dt);
+            if (m_fields->replayControls) {
+                m_fields->replayControls->refresh();
+            }
+            return;
+        }
+
         PlayLayer::postUpdate(dt);
 
         auto& recorder = m_fields->recorder;
@@ -98,6 +161,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         if (!m_fields->settingsLoaded) {
             applyDashEchoSettings();
         }
+        ensureReplayControls();
 
         cocos2d::CCNode* renderParent = this->m_objectLayer;
         int topGhostZOrder = 0;
@@ -116,6 +180,10 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             deathOverlay.attach(renderParent, topGhostZOrder);
         }
         deathOverlay.refresh(deaths);
+
+        if (m_fields->replayControls) {
+            m_fields->replayControls->refresh();
+        }
 
         if (!m_fields->captureEnabled) return;
 
@@ -143,6 +211,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         bool const wasDeadBefore = player && player->m_isDead;
 
         if (
+            !m_fields->replayStudioOpen &&
             m_fields->captureEnabled &&
             player &&
             recorder.hasActiveAttempt()
@@ -169,6 +238,9 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             }
         }
 
+        // Geometry Dash remains death/physics authority even if Studio isolation
+        // proves incomplete at runtime. DASH ECHO merely refuses to contaminate
+        // analytics with any death callback that occurred during replay review.
         PlayLayer::destroyPlayer(player, object);
 
         if (
@@ -188,6 +260,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
 
+        closeReplayStudioForLifecycle();
         fleet.stop();
         finalizeActiveAttempt(dash_echo::AttemptEndReason::Reset);
 
@@ -199,11 +272,15 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         applyDashEchoSettings();
         fleet.rebuild(recorder);
         deathOverlay.refresh(deaths);
+        if (m_fields->replayControls) {
+            m_fields->replayControls->refresh();
+        }
     }
 
     void levelComplete() {
         auto& fleet = m_fields->fleet;
 
+        closeReplayStudioForLifecycle();
         m_fields->captureEnabled = false;
         fleet.stop();
         finalizeActiveAttempt(dash_echo::AttemptEndReason::Completed);
@@ -219,6 +296,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& history = m_fields->history;
         auto& replay = m_fields->replay;
 
+        closeReplayStudioForLifecycle();
         m_fields->captureEnabled = false;
         fleet.stop();
         finalizeActiveAttempt(dash_echo::AttemptEndReason::LayerExit);
@@ -228,12 +306,13 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const deathStats = deaths.stats();
         auto const historyStats = history.stats();
         log::debug(
-            "DASH ECHO v0.7 session closed: {} attempts started, {} finalized, {} history retained / {} committed, replay candidate {}, {} deaths, {} completions, PB {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} dropped, ghost limit {}, {} clusters",
+            "DASH ECHO v0.8 session closed: {} attempts started, {} finalized, {} history retained / {} committed, replay candidate {}, replay rate {:.2f}x, {} deaths, {} completions, PB {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} dropped, ghost limit {}, {} clusters",
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
             historyStats.retainedEntries,
             historyStats.totalCommittedAttempts,
             replay.timeline().sourceAttemptId(),
+            replay.timeline().playbackRate(),
             historyStats.totalDeaths,
             historyStats.totalCompletions,
             historyStats.currentPersonalBestAttemptId,
