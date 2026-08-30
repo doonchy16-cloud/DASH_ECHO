@@ -27,6 +27,7 @@ bool EchoReplayTimeline::load(
 
     buildMarkers();
     m_cursorSeconds = m_clip.startTimeSeconds;
+    m_playbackRate = 1.0f;
     m_state = ReplayTimelineState::Ready;
     return true;
 }
@@ -35,14 +36,36 @@ void EchoReplayTimeline::clear() {
     m_clip = {};
     m_state = ReplayTimelineState::Empty;
     m_cursorSeconds = 0.0;
+    m_playbackRate = 1.0f;
 }
 
 void EchoReplayTimeline::start() {
     if (!isLoaded()) return;
+
     if (m_state == ReplayTimelineState::Finished) {
         m_cursorSeconds = m_clip.startTimeSeconds;
     }
     m_state = ReplayTimelineState::Playing;
+}
+
+void EchoReplayTimeline::pause() {
+    if (m_state == ReplayTimelineState::Playing) {
+        m_state = ReplayTimelineState::Paused;
+    }
+}
+
+void EchoReplayTimeline::resume() {
+    if (!isLoaded()) return;
+    if (m_state == ReplayTimelineState::Playing) return;
+    start();
+}
+
+void EchoReplayTimeline::togglePlayback() {
+    if (m_state == ReplayTimelineState::Playing) {
+        pause();
+    } else {
+        resume();
+    }
 }
 
 void EchoReplayTimeline::restart() {
@@ -55,12 +78,100 @@ void EchoReplayTimeline::advance(float dt) {
     if (m_state != ReplayTimelineState::Playing) return;
 
     float safeDt = 0.0f;
-    if (std::isfinite(dt)) safeDt = std::clamp(dt, 0.0f, 0.25f);
+    if (std::isfinite(dt)) {
+        safeDt = std::clamp(dt, 0.0f, 0.25f);
+    }
 
-    setCursorClamped(m_cursorSeconds + static_cast<double>(safeDt));
+    double const scaledDelta =
+        static_cast<double>(safeDt) * static_cast<double>(m_playbackRate);
+    setCursorClamped(m_cursorSeconds + scaledDelta);
+
     if (m_cursorSeconds >= m_clip.endTimeSeconds) {
         m_state = ReplayTimelineState::Finished;
     }
+}
+
+bool EchoReplayTimeline::setPlaybackRate(float rate) {
+    if (!std::isfinite(rate)) return false;
+
+    for (float const supported : kPlaybackRates) {
+        if (samePlaybackRate(rate, supported)) {
+            m_playbackRate = supported;
+            return true;
+        }
+    }
+    return false;
+}
+
+void EchoReplayTimeline::cyclePlaybackRate() {
+    std::size_t const current = playbackRateIndex();
+    std::size_t const next = (current + 1) % kPlaybackRates.size();
+    m_playbackRate = kPlaybackRates[next];
+}
+
+bool EchoReplayTimeline::seekSeconds(double timeSeconds) {
+    if (!isLoaded() || !std::isfinite(timeSeconds)) return false;
+
+    setCursorClamped(timeSeconds);
+    m_state = ReplayTimelineState::Paused;
+    return true;
+}
+
+bool EchoReplayTimeline::seekNormalized(float normalizedPosition) {
+    if (!isLoaded() || !std::isfinite(normalizedPosition)) return false;
+
+    float const bounded = std::clamp(normalizedPosition, 0.0f, 1.0f);
+    double const target =
+        m_clip.startTimeSeconds +
+        m_clip.durationSeconds * static_cast<double>(bounded);
+    return seekSeconds(target);
+}
+
+bool EchoReplayTimeline::stepPreviousFrame() {
+    if (!isLoaded() || m_clip.attempt.frames.empty()) return false;
+
+    auto const& frames = m_clip.attempt.frames;
+    auto lower = std::lower_bound(
+        frames.begin(),
+        frames.end(),
+        m_cursorSeconds,
+        [](FrameRecord const& frame, double value) {
+            return frame.timeSeconds < value;
+        }
+    );
+
+    double target = m_clip.startTimeSeconds;
+    if (lower != frames.begin()) {
+        --lower;
+        target = lower->timeSeconds;
+    }
+
+    setCursorClamped(target);
+    m_state = ReplayTimelineState::Paused;
+    return true;
+}
+
+bool EchoReplayTimeline::stepNextFrame() {
+    if (!isLoaded() || m_clip.attempt.frames.empty()) return false;
+
+    auto const& frames = m_clip.attempt.frames;
+    auto upper = std::upper_bound(
+        frames.begin(),
+        frames.end(),
+        m_cursorSeconds,
+        [](double value, FrameRecord const& frame) {
+            return value < frame.timeSeconds;
+        }
+    );
+
+    double target = m_clip.endTimeSeconds;
+    if (upper != frames.end()) {
+        target = upper->timeSeconds;
+    }
+
+    setCursorClamped(target);
+    m_state = ReplayTimelineState::Paused;
+    return true;
 }
 
 bool EchoReplayTimeline::isLoaded() const {
@@ -71,6 +182,10 @@ bool EchoReplayTimeline::isPlaying() const {
     return m_state == ReplayTimelineState::Playing;
 }
 
+bool EchoReplayTimeline::isPaused() const {
+    return m_state == ReplayTimelineState::Paused;
+}
+
 ReplayTimelineState EchoReplayTimeline::state() const { return m_state; }
 ReplayClip const* EchoReplayTimeline::clip() const { return isLoaded() ? &m_clip : nullptr; }
 AttemptRecord const* EchoReplayTimeline::replayAttempt() const { return isLoaded() ? &m_clip.attempt : nullptr; }
@@ -79,6 +194,7 @@ std::vector<ReplayTimelineMarker> const& EchoReplayTimeline::markers() const { r
 std::uint64_t EchoReplayTimeline::sourceAttemptId() const { return isLoaded() ? m_clip.attempt.attemptId : 0; }
 double EchoReplayTimeline::cursorSeconds() const { return isLoaded() ? m_cursorSeconds : 0.0; }
 double EchoReplayTimeline::durationSeconds() const { return isLoaded() ? m_clip.durationSeconds : 0.0; }
+float EchoReplayTimeline::playbackRate() const { return m_playbackRate; }
 
 float EchoReplayTimeline::normalizedCursor() const {
     if (!isLoaded() || m_clip.durationSeconds <= 0.0) return 0.0f;
@@ -167,6 +283,10 @@ ReplayTimelineMarker EchoReplayTimeline::makeMarker(
     return marker;
 }
 
+bool EchoReplayTimeline::samePlaybackRate(float left, float right) {
+    return std::abs(left - right) <= 0.0001f;
+}
+
 void EchoReplayTimeline::buildMarkers() {
     m_clip.markers.clear();
     m_clip.markers.reserve(5);
@@ -233,6 +353,22 @@ void EchoReplayTimeline::setCursorClamped(double timeSeconds) {
         m_clip.startTimeSeconds,
         m_clip.endTimeSeconds
     );
+}
+
+std::size_t EchoReplayTimeline::playbackRateIndex() const {
+    for (std::size_t i = 0; i < kPlaybackRates.size(); ++i) {
+        if (samePlaybackRate(m_playbackRate, kPlaybackRates[i])) {
+            return i;
+        }
+    }
+
+    // Defensive fallback; setPlaybackRate only accepts canonical presets.
+    for (std::size_t i = 0; i < kPlaybackRates.size(); ++i) {
+        if (samePlaybackRate(1.0f, kPlaybackRates[i])) {
+            return i;
+        }
+    }
+    return 0;
 }
 
 } // namespace dash_echo
