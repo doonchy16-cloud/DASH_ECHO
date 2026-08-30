@@ -5,9 +5,9 @@
   },
   "id": "doonchy.dash-echo",
   "name": "DASH ECHO",
-  "version": "v0.5.0",
+  "version": "v0.6.0",
   "developer": "Doonchy",
-  "description": "Every attempt leaves a trace. Synchronized multighost replay, death intelligence, heatmaps, analysis, and cinematic tools for Geometry Dash.",
+  "description": "Every attempt leaves a trace. Synchronized multighost replay, attempt history, death intelligence, heatmaps, analysis, and cinematic tools for Geometry Dash.",
   "settings": {
     "ghost-count": {
       "type": "int",
