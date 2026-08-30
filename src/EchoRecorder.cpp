@@ -9,33 +9,23 @@ namespace dash_echo {
 
 namespace {
 
+constexpr double kMaxContinuousSampleGapSeconds = 0.100;
+constexpr float kTeleportDistanceFloor = 120.0f;
+constexpr float kTeleportSpeedFloor = 3000.0f;
+constexpr float kScaleDiscontinuity = 0.35f;
+
 PlayerMode detectPlayerMode(PlayerObject const* player) {
     if (!player) {
         return PlayerMode::Cube;
     }
 
-    if (player->m_isShip) {
-        return PlayerMode::Ship;
-    }
-    if (player->m_isBall) {
-        return PlayerMode::Ball;
-    }
-    if (player->m_isBird) {
-        return PlayerMode::Ufo;
-    }
-    if (player->m_isDart) {
-        return PlayerMode::Wave;
-    }
-    if (player->m_isRobot) {
-        return PlayerMode::Robot;
-    }
-    if (player->m_isSpider) {
-        return PlayerMode::Spider;
-    }
-    if (player->m_isSwing) {
-        return PlayerMode::Swing;
-    }
-
+    if (player->m_isShip) return PlayerMode::Ship;
+    if (player->m_isBall) return PlayerMode::Ball;
+    if (player->m_isBird) return PlayerMode::Ufo;
+    if (player->m_isDart) return PlayerMode::Wave;
+    if (player->m_isRobot) return PlayerMode::Robot;
+    if (player->m_isSpider) return PlayerMode::Spider;
+    if (player->m_isSwing) return PlayerMode::Swing;
     return PlayerMode::Cube;
 }
 
@@ -45,6 +35,15 @@ ColorRGB toColorRGB(cocos2d::ccColor3B const& color) {
         static_cast<std::uint8_t>(color.g),
         static_cast<std::uint8_t>(color.b)
     };
+}
+
+bool finiteSnapshot(PlayerSnapshot const& snapshot) {
+    return
+        std::isfinite(snapshot.x) &&
+        std::isfinite(snapshot.y) &&
+        std::isfinite(snapshot.rotation) &&
+        std::isfinite(snapshot.scaleX) &&
+        std::isfinite(snapshot.scaleY);
 }
 
 } // namespace
@@ -105,6 +104,21 @@ void EchoRecorder::captureFrame(
     frame.player1 = snapshotPlayer(player1);
     frame.player2 = snapshotPlayer(player2);
 
+    if (!attempt->frames.empty()) {
+        auto const& previous = attempt->frames.back();
+        double const deltaSeconds = frame.timeSeconds - previous.timeSeconds;
+        frame.player1ContinuousFromPrevious = canInterpolate(
+            previous.player1,
+            frame.player1,
+            deltaSeconds
+        );
+        frame.player2ContinuousFromPrevious = canInterpolate(
+            previous.player2,
+            frame.player2,
+            deltaSeconds
+        );
+    }
+
     attempt->frames.push_back(std::move(frame));
     ++m_framesCaptured;
     ++m_retainedFrames;
@@ -141,6 +155,10 @@ bool EchoRecorder::hasActiveAttempt() const {
     return !m_attempts.empty() && !m_attempts.back().finalized;
 }
 
+double EchoRecorder::activeElapsedSeconds() const {
+    return hasActiveAttempt() ? m_activeElapsedSeconds : 0.0;
+}
+
 AttemptRecord const* EchoRecorder::activeAttempt() const {
     if (!hasActiveAttempt()) {
         return nullptr;
@@ -170,6 +188,50 @@ RecorderStats EchoRecorder::stats() const {
     result.retainedAttempts = m_attempts.size();
     result.retainedFrames = m_retainedFrames;
     return result;
+}
+
+bool EchoRecorder::canInterpolate(
+    PlayerSnapshot const& previous,
+    PlayerSnapshot const& current,
+    double deltaSeconds
+) {
+    if (!previous.present || !current.present) {
+        return false;
+    }
+    if (!previous.visible || !current.visible) {
+        return false;
+    }
+    if (previous.mode != current.mode) {
+        return false;
+    }
+    if (!finiteSnapshot(previous) || !finiteSnapshot(current)) {
+        return false;
+    }
+    if (
+        !std::isfinite(deltaSeconds) ||
+        deltaSeconds <= 0.0 ||
+        deltaSeconds > kMaxContinuousSampleGapSeconds
+    ) {
+        return false;
+    }
+
+    float const dx = current.x - previous.x;
+    float const dy = current.y - previous.y;
+    float const distance = std::hypot(dx, dy);
+    float const speed = distance / static_cast<float>(deltaSeconds);
+
+    if (distance > kTeleportDistanceFloor && speed > kTeleportSpeedFloor) {
+        return false;
+    }
+
+    if (
+        std::abs(current.scaleX - previous.scaleX) > kScaleDiscontinuity ||
+        std::abs(current.scaleY - previous.scaleY) > kScaleDiscontinuity
+    ) {
+        return false;
+    }
+
+    return true;
 }
 
 AttemptRecord* EchoRecorder::mutableActiveAttempt() {
