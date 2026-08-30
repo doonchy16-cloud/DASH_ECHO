@@ -1,4 +1,4 @@
-name: DASH ECHO v1 Build
+name: ECHO_DASH v1.1 Build
 
 on:
   push:
@@ -15,8 +15,14 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout DASH ECHO
+      - name: Checkout ECHO_DASH
         uses: actions/checkout@v4
+
+      - name: Run v1.1 contract regression tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest tests.test_v1_1_contract -v
 
       - name: Install pinned Geode CLI 3.7.4
         shell: pwsh
@@ -52,10 +58,7 @@ jobs:
           "GEODE_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $env:GEODE_SDK = $sdk
 
-          # CLI 3.7.4 asserts that at least one Geode profile exists even when
-          # install-binaries is given an explicit platform. Create an isolated
-          # CI-only profile; it is never used to launch or modify Geometry Dash.
-          $profileDir = Join-Path $env:RUNNER_TEMP 'dash-echo-ci-profile'
+          $profileDir = Join-Path $env:RUNNER_TEMP 'echo-dash-ci-profile'
           New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
           $dummyGd = Join-Path $profileDir 'GeometryDash.exe'
           New-Item -ItemType File -Path $dummyGd -Force | Out-Null
@@ -88,7 +91,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           geode build --config Release
 
-      - name: Collect DASH ECHO package
+      - name: Collect ECHO_DASH package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -102,24 +105,17 @@ jobs:
             throw 'Build completed without producing any .geode package'
           }
 
-          $preferred = $packages | Where-Object { $_.Name -like '*dash-echo*.geode' }
-          if ($preferred) {
-            $packages = $preferred
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one ECHO_DASH .geode package, found $($packages.Count)"
           }
 
-          foreach ($package in $packages) {
-            Copy-Item -Path $package.FullName -Destination $dist -Force
-            Write-Host "Collected package: $($package.FullName)"
-          }
+          Copy-Item -Path $packages[0].FullName -Destination $dist -Force
+          Write-Host "Collected package: $($packages[0].FullName)"
 
-          if (-not (Get-ChildItem -Path $dist -Filter '*.geode')) {
-            throw 'No DASH ECHO package was copied to dist'
-          }
-
-      - name: Upload v1.0 candidate
+      - name: Upload v1.1.0 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: DASH-ECHO-v1.0.0-windows
+          name: ECHO-DASH-v1.1.0-windows
           path: dist/*.geode
           if-no-files-found: error
           retention-days: 30
