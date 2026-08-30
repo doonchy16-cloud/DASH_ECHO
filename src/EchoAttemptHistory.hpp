@@ -20,6 +20,7 @@ struct AttemptDeathSummary {
     bool present = false;
     std::uint64_t eventId = 0;
     std::uint8_t playerIndex = 1;
+    double timeSeconds = 0.0;
     float progressPercent = 0.0f;
     float x = 0.0f;
     float y = 0.0f;
