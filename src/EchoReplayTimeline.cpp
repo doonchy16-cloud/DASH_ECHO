@@ -251,12 +251,8 @@ CameraSnapshot EchoReplayTimeline::cameraAtCursor() const {
     if (!isLoaded() || m_clip.attempt.frames.empty()) return empty;
 
     auto const& frames = m_clip.attempt.frames;
-    if (m_cursorSeconds <= frames.front().timeSeconds) {
-        return frames.front().camera;
-    }
-    if (m_cursorSeconds >= frames.back().timeSeconds) {
-        return frames.back().camera;
-    }
+    if (m_cursorSeconds <= frames.front().timeSeconds) return frames.front().camera;
+    if (m_cursorSeconds >= frames.back().timeSeconds) return frames.back().camera;
 
     auto upper = std::upper_bound(
         frames.begin(),
@@ -271,13 +267,10 @@ CameraSnapshot EchoReplayTimeline::cameraAtCursor() const {
 
     auto const& to = *upper;
     auto const& from = *(upper - 1);
-    if (!from.camera.present) return from.camera;
-    if (!to.camera.present) return from.camera;
+    if (!from.camera.present || !to.camera.present) return from.camera;
 
     double const span = to.timeSeconds - from.timeSeconds;
-    if (!std::isfinite(span) || span <= 0.0) {
-        return from.camera;
-    }
+    if (!std::isfinite(span) || span <= 0.0) return from.camera;
 
     float const alpha = static_cast<float>(std::clamp(
         (m_cursorSeconds - from.timeSeconds) / span,
@@ -285,21 +278,88 @@ CameraSnapshot EchoReplayTimeline::cameraAtCursor() const {
         1.0
     ));
 
-    if (!to.cameraContinuousFromPrevious) {
-        return from.camera;
-    }
+    if (!to.cameraContinuousFromPrevious) return from.camera;
 
     CameraSnapshot result;
     result.present = true;
     result.x = std::lerp(from.camera.x, to.camera.x, alpha);
     result.y = std::lerp(from.camera.y, to.camera.y, alpha);
-    result.rotation = interpolateRotation(
-        from.camera.rotation,
-        to.camera.rotation,
-        alpha
-    );
+    result.rotation = interpolateRotation(from.camera.rotation, to.camera.rotation, alpha);
     result.scaleX = std::lerp(from.camera.scaleX, to.camera.scaleX, alpha);
     result.scaleY = std::lerp(from.camera.scaleY, to.camera.scaleY, alpha);
+    return result;
+}
+
+PlayerSnapshot EchoReplayTimeline::playerAtCursor(std::uint8_t playerIndex) const {
+    return playerAtTime(playerIndex, m_cursorSeconds);
+}
+
+PlayerSnapshot EchoReplayTimeline::playerAtTime(
+    std::uint8_t playerIndex,
+    double timeSeconds
+) const {
+    PlayerSnapshot empty;
+    if (
+        !isLoaded() ||
+        m_clip.attempt.frames.empty() ||
+        !std::isfinite(timeSeconds)
+    ) {
+        return empty;
+    }
+
+    bool const secondPlayer = playerIndex == 2;
+    auto const selectPlayer = [secondPlayer](FrameRecord const& frame) -> PlayerSnapshot const& {
+        return secondPlayer ? frame.player2 : frame.player1;
+    };
+    auto const continuousFromPrevious = [secondPlayer](FrameRecord const& frame) {
+        return secondPlayer ?
+            frame.player2ContinuousFromPrevious :
+            frame.player1ContinuousFromPrevious;
+    };
+
+    auto const& frames = m_clip.attempt.frames;
+    if (timeSeconds <= frames.front().timeSeconds) return selectPlayer(frames.front());
+    if (timeSeconds >= frames.back().timeSeconds) return selectPlayer(frames.back());
+
+    auto upper = std::upper_bound(
+        frames.begin(),
+        frames.end(),
+        timeSeconds,
+        [](double value, FrameRecord const& frame) {
+            return value < frame.timeSeconds;
+        }
+    );
+    if (upper == frames.begin()) return selectPlayer(frames.front());
+
+    auto const& toFrame = *upper;
+    auto const& fromFrame = *(upper - 1);
+    auto const& from = selectPlayer(fromFrame);
+    auto const& to = selectPlayer(toFrame);
+
+    if (!from.present || !to.present || !continuousFromPrevious(toFrame)) {
+        return from;
+    }
+
+    double const span = toFrame.timeSeconds - fromFrame.timeSeconds;
+    if (!std::isfinite(span) || span <= 0.0) return from;
+
+    float const alpha = static_cast<float>(std::clamp(
+        (timeSeconds - fromFrame.timeSeconds) / span,
+        0.0,
+        1.0
+    ));
+
+    PlayerSnapshot result = from;
+    result.present = true;
+    result.visible = from.visible && to.visible;
+    result.mode = from.mode;
+    result.color1 = interpolateColor(from.color1, to.color1, alpha);
+    result.color2 = interpolateColor(from.color2, to.color2, alpha);
+    result.x = std::lerp(from.x, to.x, alpha);
+    result.y = std::lerp(from.y, to.y, alpha);
+    result.rotation = interpolateRotation(from.rotation, to.rotation, alpha);
+    result.scaleX = std::lerp(from.scaleX, to.scaleX, alpha);
+    result.scaleY = std::lerp(from.scaleY, to.scaleY, alpha);
     return result;
 }
 
@@ -349,6 +409,28 @@ float EchoReplayTimeline::interpolateRotation(float from, float to, float alpha)
     if (delta > 180.0f) delta -= 360.0f;
     if (delta < -180.0f) delta += 360.0f;
     return from + delta * std::clamp(alpha, 0.0f, 1.0f);
+}
+
+ColorRGB EchoReplayTimeline::interpolateColor(
+    ColorRGB const& from,
+    ColorRGB const& to,
+    float alpha
+) {
+    float const bounded = std::clamp(alpha, 0.0f, 1.0f);
+    auto const channel = [bounded](std::uint8_t left, std::uint8_t right) {
+        float const value = std::lerp(
+            static_cast<float>(left),
+            static_cast<float>(right),
+            bounded
+        );
+        return static_cast<std::uint8_t>(std::clamp(value, 0.0f, 255.0f));
+    };
+
+    return ColorRGB {
+        channel(from.r, to.r),
+        channel(from.g, to.g),
+        channel(from.b, to.b)
+    };
 }
 
 void EchoReplayTimeline::buildMarkers() {
@@ -421,16 +503,11 @@ void EchoReplayTimeline::setCursorClamped(double timeSeconds) {
 
 std::size_t EchoReplayTimeline::playbackRateIndex() const {
     for (std::size_t i = 0; i < kPlaybackRates.size(); ++i) {
-        if (samePlaybackRate(m_playbackRate, kPlaybackRates[i])) {
-            return i;
-        }
+        if (samePlaybackRate(m_playbackRate, kPlaybackRates[i])) return i;
     }
 
-    // Defensive fallback; setPlaybackRate only accepts canonical presets.
     for (std::size_t i = 0; i < kPlaybackRates.size(); ++i) {
-        if (samePlaybackRate(1.0f, kPlaybackRates[i])) {
-            return i;
-        }
+        if (samePlaybackRate(1.0f, kPlaybackRates[i])) return i;
     }
     return 0;
 }
