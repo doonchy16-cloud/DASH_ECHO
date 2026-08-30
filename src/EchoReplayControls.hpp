@@ -6,6 +6,7 @@
 
 #include <functional>
 
+class CCMenuItemSpriteExtra;
 class Slider;
 
 namespace dash_echo {
@@ -45,7 +46,7 @@ private:
     StudioModeCallback m_onStudioModeChanged;
     bool m_studioOpen = false;
 
-    cocos2d::CCMenuItemSpriteExtra* m_launcher = nullptr;
+    CCMenuItemSpriteExtra* m_launcher = nullptr;
     cocos2d::CCNode* m_panel = nullptr;
     Slider* m_slider = nullptr;
 
