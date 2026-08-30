@@ -5,7 +5,7 @@
   },
   "id": "doonchy.dash-echo",
   "name": "DASH ECHO",
-  "version": "v0.2.0",
+  "version": "v0.3.0",
   "developer": "Doonchy",
-  "description": "Every attempt leaves a trace. Attempt recording, ghost replay, analysis, and cinematic tools for Geometry Dash."
+  "description": "Every attempt leaves a trace. Attempt recording, synchronized ghost replay, analysis, and cinematic tools for Geometry Dash."
 }
