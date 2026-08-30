@@ -17,6 +17,7 @@ constexpr float kScaleDiscontinuity = 0.35f;
 constexpr float kCameraJumpDistance = 300.0f;
 constexpr float kCameraScaleDiscontinuity = 0.40f;
 constexpr float kCameraRotationDiscontinuity = 90.0f;
+constexpr double kSameTimestampEpsilon = 0.000001;
 
 PlayerMode detectPlayerMode(PlayerObject const* player) {
     if (!player) return PlayerMode::Cube;
@@ -70,10 +71,11 @@ void EchoRecorder::beginAttempt() {
 
     AttemptRecord attempt;
     attempt.attemptId = m_nextAttemptId++;
-    attempt.frames.reserve(4096);
+    attempt.frames.reserve(2048);
     m_attempts.push_back(std::move(attempt));
 
     m_activeElapsedSeconds = 0.0;
+    m_nextRegularSampleTime = 0.0;
     ++m_attemptsStarted;
     trimRetention();
 }
@@ -92,51 +94,35 @@ void EchoRecorder::captureFrame(
     if (std::isfinite(dt)) safeDt = std::clamp(dt, 0.0f, 0.25f);
     m_activeElapsedSeconds += static_cast<double>(safeDt);
 
-    float safeProgress = 0.0f;
-    if (std::isfinite(progressPercent)) {
-        safeProgress = std::clamp(progressPercent, 0.0f, 100.0f);
-    }
-
+    updateAttemptProgress(progressPercent);
     attempt->durationSeconds = m_activeElapsedSeconds;
-    attempt->maxProgressPercent = std::max(attempt->maxProgressPercent, safeProgress);
 
-    if (attempt->frames.size() >= kMaxFramesPerAttempt) {
-        ++attempt->framesDropped;
-        ++m_framesDropped;
-        return;
-    }
+    bool const sampleDue =
+        attempt->frames.empty() ||
+        m_activeElapsedSeconds + kSameTimestampEpsilon >= m_nextRegularSampleTime;
+    if (!sampleDue) return;
 
-    FrameRecord frame;
-    frame.sequence = m_nextFrameSequence++;
-    frame.timeSeconds = m_activeElapsedSeconds;
-    frame.progressPercent = safeProgress;
-    frame.player1 = snapshotPlayer(player1);
-    frame.player2 = snapshotPlayer(player2);
-    frame.camera = snapshotCamera(viewportLayer);
+    appendSnapshot(progressPercent, player1, player2, viewportLayer, false);
+    m_nextRegularSampleTime = m_activeElapsedSeconds + m_captureSampleInterval;
+}
 
-    if (!attempt->frames.empty()) {
-        auto const& previous = attempt->frames.back();
-        double const deltaSeconds = frame.timeSeconds - previous.timeSeconds;
-        frame.player1ContinuousFromPrevious = canInterpolate(
-            previous.player1,
-            frame.player1,
-            deltaSeconds
-        );
-        frame.player2ContinuousFromPrevious = canInterpolate(
-            previous.player2,
-            frame.player2,
-            deltaSeconds
-        );
-        frame.cameraContinuousFromPrevious = canInterpolateCamera(
-            previous.camera,
-            frame.camera,
-            deltaSeconds
-        );
-    }
+void EchoRecorder::captureEventFrame(
+    float progressPercent,
+    PlayerObject* player1,
+    PlayerObject* player2,
+    cocos2d::CCNode* viewportLayer
+) {
+    auto* attempt = mutableActiveAttempt();
+    if (!attempt) return;
 
-    attempt->frames.push_back(std::move(frame));
-    ++m_framesCaptured;
-    ++m_retainedFrames;
+    updateAttemptProgress(progressPercent);
+    attempt->durationSeconds = m_activeElapsedSeconds;
+    appendSnapshot(progressPercent, player1, player2, viewportLayer, true);
+
+    // A forced sample is already authoritative at this timestamp. Move the next
+    // regular deadline forward so a high-refresh game does not immediately add
+    // an effectively duplicate regular sample on the following update.
+    m_nextRegularSampleTime = m_activeElapsedSeconds + m_captureSampleInterval;
 }
 
 void EchoRecorder::finalizeAttempt(AttemptEndReason reason) {
@@ -149,6 +135,7 @@ void EchoRecorder::finalizeAttempt(AttemptEndReason reason) {
     ++m_attemptsFinalized;
 
     m_activeElapsedSeconds = 0.0;
+    m_nextRegularSampleTime = 0.0;
     trimRetention();
 }
 
@@ -162,6 +149,31 @@ void EchoRecorder::clear() {
     m_framesDropped = 0;
     m_retainedFrames = 0;
     m_activeElapsedSeconds = 0.0;
+    m_nextRegularSampleTime = 0.0;
+}
+
+void EchoRecorder::setCaptureSampleRate(double hz) {
+    if (!std::isfinite(hz)) hz = kDefaultCaptureSampleRate;
+    m_captureSampleRate = std::clamp(
+        hz,
+        kMinCaptureSampleRate,
+        kMaxCaptureSampleRate
+    );
+    m_captureSampleInterval = 1.0 / m_captureSampleRate;
+
+    if (hasActiveAttempt()) {
+        m_nextRegularSampleTime = m_activeElapsedSeconds + m_captureSampleInterval;
+    }
+}
+
+double EchoRecorder::captureSampleRate() const {
+    return m_captureSampleRate;
+}
+
+void EchoRecorder::setNextAttemptIdFloor(std::uint64_t nextAttemptId) {
+    if (nextAttemptId > m_nextAttemptId) {
+        m_nextAttemptId = nextAttemptId;
+    }
 }
 
 bool EchoRecorder::hasActiveAttempt() const {
@@ -221,6 +233,7 @@ RecorderStats EchoRecorder::stats() const {
     result.framesDropped = m_framesDropped;
     result.retainedAttempts = m_attempts.size();
     result.retainedFrames = m_retainedFrames;
+    result.captureSampleRate = m_captureSampleRate;
     return result;
 }
 
@@ -292,9 +305,6 @@ bool EchoRecorder::isBetterPersonalBest(
 ) {
     if (candidate.maxProgressPercent > incumbent.maxProgressPercent) return true;
     if (candidate.maxProgressPercent < incumbent.maxProgressPercent) return false;
-
-    // Equal-progress ties deliberately prefer the newer attempt. This keeps the
-    // pinned PB fresh and lets an older tied attempt age out normally.
     return candidate.attemptId > incumbent.attemptId;
 }
 
@@ -335,6 +345,105 @@ CameraSnapshot EchoRecorder::snapshotCamera(cocos2d::CCNode* viewportLayer) cons
     return snapshot;
 }
 
+void EchoRecorder::appendSnapshot(
+    float progressPercent,
+    PlayerObject* player1,
+    PlayerObject* player2,
+    cocos2d::CCNode* viewportLayer,
+    bool replaceSameTimestamp
+) {
+    auto* attempt = mutableActiveAttempt();
+    if (!attempt) return;
+
+    if (attempt->frames.size() >= kMaxFramesPerAttempt) {
+        ++attempt->framesDropped;
+        ++m_framesDropped;
+        return;
+    }
+
+    float safeProgress = 0.0f;
+    if (std::isfinite(progressPercent)) {
+        safeProgress = std::clamp(progressPercent, 0.0f, 100.0f);
+    }
+
+    FrameRecord frame;
+    frame.timeSeconds = m_activeElapsedSeconds;
+    frame.progressPercent = safeProgress;
+    frame.player1 = snapshotPlayer(player1);
+    frame.player2 = snapshotPlayer(player2);
+    frame.camera = snapshotCamera(viewportLayer);
+
+    bool const replaceLast =
+        replaceSameTimestamp &&
+        !attempt->frames.empty() &&
+        std::abs(attempt->frames.back().timeSeconds - frame.timeSeconds) <=
+            kSameTimestampEpsilon;
+
+    if (replaceLast) {
+        auto const previousSequence = attempt->frames.back().sequence;
+        frame.sequence = previousSequence;
+
+        if (attempt->frames.size() >= 2) {
+            auto const& previous = attempt->frames[attempt->frames.size() - 2];
+            double const deltaSeconds = frame.timeSeconds - previous.timeSeconds;
+            frame.player1ContinuousFromPrevious = canInterpolate(
+                previous.player1,
+                frame.player1,
+                deltaSeconds
+            );
+            frame.player2ContinuousFromPrevious = canInterpolate(
+                previous.player2,
+                frame.player2,
+                deltaSeconds
+            );
+            frame.cameraContinuousFromPrevious = canInterpolateCamera(
+                previous.camera,
+                frame.camera,
+                deltaSeconds
+            );
+        }
+
+        attempt->frames.back() = std::move(frame);
+        return;
+    }
+
+    frame.sequence = m_nextFrameSequence++;
+    if (!attempt->frames.empty()) {
+        auto const& previous = attempt->frames.back();
+        double const deltaSeconds = frame.timeSeconds - previous.timeSeconds;
+        frame.player1ContinuousFromPrevious = canInterpolate(
+            previous.player1,
+            frame.player1,
+            deltaSeconds
+        );
+        frame.player2ContinuousFromPrevious = canInterpolate(
+            previous.player2,
+            frame.player2,
+            deltaSeconds
+        );
+        frame.cameraContinuousFromPrevious = canInterpolateCamera(
+            previous.camera,
+            frame.camera,
+            deltaSeconds
+        );
+    }
+
+    attempt->frames.push_back(std::move(frame));
+    ++m_framesCaptured;
+    ++m_retainedFrames;
+}
+
+void EchoRecorder::updateAttemptProgress(float progressPercent) {
+    auto* attempt = mutableActiveAttempt();
+    if (!attempt) return;
+
+    float safeProgress = 0.0f;
+    if (std::isfinite(progressPercent)) {
+        safeProgress = std::clamp(progressPercent, 0.0f, 100.0f);
+    }
+    attempt->maxProgressPercent = std::max(attempt->maxProgressPercent, safeProgress);
+}
+
 void EchoRecorder::trimRetention() {
     while (
         (m_attempts.size() > kMaxRetainedAttempts || m_retainedFrames > kMaxRetainedFrames) &&
@@ -350,8 +459,6 @@ void EchoRecorder::trimRetention() {
             break;
         }
 
-        // With one pinned PB plus an active attempt, per-attempt frame caps make
-        // this normally unreachable. Breaking is safer than evicting authority.
         if (eviction == m_attempts.end()) break;
 
         if (eviction->frames.size() <= m_retainedFrames) {
