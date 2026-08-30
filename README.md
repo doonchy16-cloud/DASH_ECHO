@@ -2,7 +2,7 @@
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost replays, death analysis, and cinematic replay tools.
+DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, death analysis, and cinematic replay tools.
 
 ## Project authority
 
@@ -15,12 +15,12 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 - Tooling: **Geode CLI 3.7.4**
 - Current Windows SDK/loader baseline: **Geode v5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v0.3.0**
-- Current milestone: **Ghost Synchronization Engine**
+- Current mod version: **v0.4.0**
+- Current milestone: **Multiverse Ghost Fleet**
 
 > Note: `3.7.4` is the Geode CLI version. The Geode loader/SDK has its own 5.x version line.
 
-## Implemented through v0.3
+## Implemented through v0.4
 
 ### v0.1 — Recorder Foundation
 
@@ -33,8 +33,7 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 
 ### v0.2 — Previous-Attempt Ghost
 
-- one previous finalized attempt selected on reset
-- translucent ghost player 1 + player 2 visuals
+- translucent historical player 1 + player 2 visuals
 - cube / ship / ball / UFO / wave / robot / spider / swing reconstruction
 - recorded primary / secondary colors
 - recorded position / rotation / scale / visibility
@@ -43,16 +42,25 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 ### v0.3 — Ghost Synchronization Engine
 
 - recorder active-attempt time is the single authoritative playback clock
-- ghost no longer accumulates an independent `dt` clock
 - timestamp-bracketed position / scale / color interpolation
 - shortest-path rotation interpolation
-- monotonic frame cursor for normal playback
-- binary-search recovery for backward/non-monotonic seeks
-- explicit continuity flags recorded once for every player sample boundary
-- hard snap boundaries for mode/visibility/presence transitions
-- teleport-like displacement detection to prevent fake cross-screen interpolation
-- large scale-change and long-sample-gap discontinuity guards
-- renderable timeline ends at the last actual recorded sample, avoiding frozen trailing ghosts after frame-cap exhaustion
+- monotonic forward cursor + binary-search non-monotonic recovery
+- recorded continuity/discontinuity boundaries
+- teleport-like displacement, mode, visibility, scale, and long-gap snap guards
+- explicit attempt lifecycle prevents phantom post-completion attempts
+
+### v0.4 — Multiverse Ghost Fleet
+
+- reusable fixed-capacity fleet of up to 6 historical attempts
+- at most 12 ghost player nodes in dual mode
+- Geode `Ghost Count` setting: 0–6, default 4
+- newest-attempt selection with personal-best preservation
+- recorder-owned personal-best identity and PB-pinned retention
+- age-based ghost opacity with stronger PB visibility
+- deterministic oldest-to-newest layering below the live player
+- every ghost shares the recorder's authoritative clock and v0.3 synchronization engine
+- fleet historical pointers released before recorder retention can evict attempts
+- out-of-range playback hides rather than discards source history, preserving later backward-seek capability
 
 ## Roadmap
 
@@ -60,8 +68,8 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 |---|---|
 | v0.1 | Attempt-state recorder foundation |
 | v0.2 | Previous-attempt ghost |
-| **v0.3** | **Ghost synchronization + interpolation — source implemented** |
-| v0.4 | Multiple ghosts |
+| v0.3 | Ghost synchronization + interpolation |
+| **v0.4** | **Multiple ghosts / Multiverse fleet — source implemented** |
 | v0.5 | Death markers / heatmap foundation |
 | v0.6 | Attempt history |
 | v0.7 | Replay timeline |
