@@ -4,6 +4,9 @@
 #include "EchoGhostFleet.hpp"
 #include "EchoRecorder.hpp"
 
+#include <algorithm>
+#include <cstdint>
+
 using namespace geode::prelude;
 
 class $modify(DashEchoPlayLayer, PlayLayer) {
@@ -31,9 +34,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             fleet.attach(parent, topGhostZOrder);
         }
 
-        if (!m_fields->captureEnabled) {
-            return;
-        }
+        if (!m_fields->captureEnabled) return;
 
         if (!recorder.hasActiveAttempt()) {
             recorder.beginAttempt();
@@ -68,6 +69,16 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         m_fields->captureEnabled = true;
         recorder.beginAttempt();
 
+        // Settings are applied only at an attempt boundary, never while the fleet
+        // is actively holding historical AttemptRecord references.
+        auto const requestedGhostCount = Mod::get()->getSettingValue<std::int64_t>("ghost-count");
+        auto const boundedGhostCount = std::clamp<std::int64_t>(
+            requestedGhostCount,
+            0,
+            static_cast<std::int64_t>(dash_echo::EchoGhostFleet::kMaxGhosts)
+        );
+        fleet.setGhostLimit(static_cast<std::size_t>(boundedGhostCount));
+
         // Retention trimming has already completed. Selection now remains stable
         // for the entire active attempt and is rebuilt only at the next boundary.
         fleet.rebuild(recorder);
@@ -101,11 +112,12 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const recorderStats = recorder.stats();
         auto const fleetStats = fleet.stats();
         log::debug(
-            "DASH ECHO v0.4 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped, PB attempt {}",
+            "DASH ECHO v0.4 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped, ghost limit {}, PB attempt {}",
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
             recorderStats.retainedFrames,
             recorderStats.framesDropped,
+            fleetStats.configuredGhostLimit,
             fleetStats.personalBestAttemptId
         );
 
