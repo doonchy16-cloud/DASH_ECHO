@@ -50,7 +50,6 @@ private:
         bool personalBest = false;
     };
 
-    static AttemptRecord const* findPersonalBest(EchoRecorder const& recorder);
     static std::uint8_t opacityForRank(
         std::size_t rank,
         std::size_t count,
