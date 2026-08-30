@@ -4,8 +4,12 @@
 
 DASH ECHO is being built as a local Geometry Dash replay and training studio: attempt ghosts, replay comparison, death analysis, timelines, and cinematic playback.
 
-## v0.1 — Recorder Foundation
+## v0.2 — Previous-Attempt Ghost
 
-The first milestone records structured player state for each attempt in memory. Rendering, persistence, replay controls, analytics, and cinematic systems arrive in later milestones.
+DASH ECHO records each attempt in memory and, after a reset, can use the immediately previous finalized attempt as a translucent visual ghost source.
 
-No Geometry Dash save-file modification is part of the v0.1 design.
+The v0.2 source includes player 1 / player 2 visual playback, recorded transforms, colors, and cube/ship/ball/UFO/wave/robot/spider/swing mode reconstruction.
+
+Runtime verification remains intentionally deferred until v1.0.
+
+DASH ECHO does not intentionally modify Geometry Dash save files, account state, physics authority, or collision authority.
