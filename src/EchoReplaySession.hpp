@@ -20,10 +20,20 @@ public:
 
     bool load(AttemptRecord const& attempt, AttemptHistoryEntry const& history);
     void start();
+    void pause();
+    void resume();
+    void togglePlayback();
     void advance(float dt);
     void restart();
     void stop();
     void clear();
+
+    bool setPlaybackRate(float rate);
+    void cyclePlaybackRate();
+    bool seekSeconds(double timeSeconds);
+    bool seekNormalized(float normalizedPosition);
+    bool stepPreviousFrame();
+    bool stepNextFrame();
 
     [[nodiscard]] bool isAttached() const;
     [[nodiscard]] bool isLoaded() const;
@@ -33,6 +43,7 @@ public:
 
 private:
     void bindGhostToOwnedClip();
+    void synchronizeGhost();
 
     EchoReplayTimeline m_timeline;
     EchoGhost m_ghost;
