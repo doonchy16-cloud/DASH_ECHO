@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 
+#include "EchoAttemptHistory.hpp"
 #include "EchoDeathAnalytics.hpp"
 #include "EchoDeathOverlay.hpp"
 #include "EchoGhostFleet.hpp"
@@ -17,6 +18,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         dash_echo::EchoGhostFleet fleet;
         dash_echo::EchoDeathAnalytics deaths;
         dash_echo::EchoDeathOverlay deathOverlay;
+        dash_echo::EchoAttemptHistory history;
         bool captureEnabled = true;
         bool settingsLoaded = false;
     };
@@ -34,6 +36,43 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             Mod::get()->getSettingValue<bool>("death-markers");
         m_fields->deathOverlay.setEnabled(deathMarkersEnabled);
         m_fields->settingsLoaded = true;
+    }
+
+    bool finalizeActiveAttempt(dash_echo::AttemptEndReason reason) {
+        auto& recorder = m_fields->recorder;
+        auto& deaths = m_fields->deaths;
+        auto& history = m_fields->history;
+
+        auto const* active = recorder.activeAttempt();
+        if (!active) return false;
+
+        std::uint64_t const attemptId = active->attemptId;
+        auto const* priorBest = recorder.personalBestAttempt();
+        float const priorBestProgress =
+            priorBest ? priorBest->maxProgressPercent : 0.0f;
+
+        recorder.finalizeAttempt(reason);
+
+        auto const* finalized = recorder.attemptById(attemptId);
+        if (!finalized || !finalized->finalized) {
+            log::warn(
+                "DASH ECHO v0.6 could not resolve finalized attempt {} for history",
+                attemptId
+            );
+            return false;
+        }
+
+        auto const* currentBest = recorder.personalBestAttempt();
+        std::uint64_t const currentBestAttemptId =
+            currentBest ? currentBest->attemptId : 0;
+        auto const* death = deaths.deathForAttempt(attemptId);
+
+        return history.commitFinalizedAttempt(
+            *finalized,
+            death,
+            priorBestProgress,
+            currentBestAttemptId
+        );
     }
 
     void postUpdate(float dt) {
@@ -59,8 +98,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             fleet.attach(renderParent, topGhostZOrder);
         }
         if (!deathOverlay.isAttached()) {
-            // The death overlay shares the live player's coordinate space and is
-            // inserted below the live player. Cluster visuals never affect physics.
             deathOverlay.attach(renderParent, topGhostZOrder);
         }
         deathOverlay.refresh(deaths);
@@ -78,8 +115,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             this->m_player2
         );
 
-        // Every historical ghost consumes the exact same authoritative current-
-        // attempt clock. No fleet member accumulates an independent timeline.
         fleet.synchronize(recorder.activeElapsedSeconds());
     }
 
@@ -119,9 +154,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             }
         }
 
-        // Let Geometry Dash and the rest of the hook chain decide whether this
-        // destroy request actually produces a death. Analytics observe outcome;
-        // they never become death/physics authority.
         PlayLayer::destroyPlayer(player, object);
 
         if (
@@ -141,39 +173,27 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
 
-        // Release all historical AttemptRecord references before recorder
-        // finalization/retention is allowed to evict old attempts.
+        // Historical replay pointers must be released before recorder retention
+        // is allowed to mutate during finalization.
         fleet.stop();
-
-        if (recorder.hasActiveAttempt()) {
-            recorder.finalizeAttempt(dash_echo::AttemptEndReason::Reset);
-        }
+        finalizeActiveAttempt(dash_echo::AttemptEndReason::Reset);
 
         PlayLayer::resetLevel();
 
         m_fields->captureEnabled = true;
         recorder.beginAttempt();
 
-        // Settings are applied only at attempt boundaries after the initial load.
-        // This avoids mutating fleet selection while it holds history references.
         applyDashEchoSettings();
-
-        // Retention trimming has already completed. Selection now remains stable
-        // for the entire active attempt and is rebuilt only at the next boundary.
         fleet.rebuild(recorder);
         deathOverlay.refresh(deaths);
     }
 
     void levelComplete() {
-        auto& recorder = m_fields->recorder;
         auto& fleet = m_fields->fleet;
 
         m_fields->captureEnabled = false;
         fleet.stop();
-
-        if (recorder.hasActiveAttempt()) {
-            recorder.finalizeAttempt(dash_echo::AttemptEndReason::Completed);
-        }
+        finalizeActiveAttempt(dash_echo::AttemptEndReason::Completed);
 
         PlayLayer::levelComplete();
     }
@@ -183,28 +203,32 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& fleet = m_fields->fleet;
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
+        auto& history = m_fields->history;
 
         m_fields->captureEnabled = false;
         fleet.stop();
-
-        if (recorder.hasActiveAttempt()) {
-            recorder.finalizeAttempt(dash_echo::AttemptEndReason::LayerExit);
-        }
+        finalizeActiveAttempt(dash_echo::AttemptEndReason::LayerExit);
 
         auto const recorderStats = recorder.stats();
         auto const fleetStats = fleet.stats();
         auto const deathStats = deaths.stats();
+        auto const historyStats = history.stats();
         log::debug(
-            "DASH ECHO v0.5 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped, ghost limit {}, PB attempt {}, {} deaths, {} clusters, hottest cluster {}",
+            "DASH ECHO v0.6 session closed: {} attempts started, {} finalized, {} history entries retained / {} committed, {} deaths, {} completions, {} manual resets, PB attempt {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} frames dropped, ghost limit {}, {} death clusters",
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
+            historyStats.retainedEntries,
+            historyStats.totalCommittedAttempts,
+            historyStats.totalDeaths,
+            historyStats.totalCompletions,
+            historyStats.totalManualResets,
+            historyStats.currentPersonalBestAttemptId,
+            historyStats.currentBestProgressPercent,
+            historyStats.longestAttemptSeconds,
             recorderStats.retainedFrames,
             recorderStats.framesDropped,
             fleetStats.configuredGhostLimit,
-            fleetStats.personalBestAttemptId,
-            deathStats.retainedDeathEvents,
-            deathStats.clusterCount,
-            deathStats.hottestClusterDeaths
+            deathStats.clusterCount
         );
 
         deathOverlay.detach();
