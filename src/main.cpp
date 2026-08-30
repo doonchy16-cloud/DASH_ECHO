@@ -37,7 +37,9 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             this->m_player2
         );
 
-        ghost.update(dt);
+        // One authoritative clock: the current attempt recorder timeline.
+        // The ghost never accumulates its own dt, eliminating clock drift.
+        ghost.synchronize(recorder.activeElapsedSeconds());
     }
 
     void resetLevel() {
@@ -81,7 +83,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
 
         auto const stats = recorder.stats();
         log::debug(
-            "DASH ECHO v0.2 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped",
+            "DASH ECHO v0.3 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped",
             stats.attemptsStarted,
             stats.attemptsFinalized,
             stats.retainedFrames,
