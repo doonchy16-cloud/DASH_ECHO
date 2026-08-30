@@ -6,6 +6,7 @@
 #include "EchoDeathOverlay.hpp"
 #include "EchoGhostFleet.hpp"
 #include "EchoRecorder.hpp"
+#include "EchoReplaySession.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -19,6 +20,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         dash_echo::EchoDeathAnalytics deaths;
         dash_echo::EchoDeathOverlay deathOverlay;
         dash_echo::EchoAttemptHistory history;
+        dash_echo::EchoReplaySession replay;
         bool captureEnabled = true;
         bool settingsLoaded = false;
     };
@@ -42,6 +44,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& recorder = m_fields->recorder;
         auto& deaths = m_fields->deaths;
         auto& history = m_fields->history;
+        auto& replay = m_fields->replay;
 
         auto const* active = recorder.activeAttempt();
         if (!active) return false;
@@ -56,7 +59,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const* finalized = recorder.attemptById(attemptId);
         if (!finalized || !finalized->finalized) {
             log::warn(
-                "DASH ECHO v0.6 could not resolve finalized attempt {} for history",
+                "DASH ECHO v0.7 could not resolve finalized attempt {} for history",
                 attemptId
             );
             return false;
@@ -67,12 +70,20 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             currentBest ? currentBest->attemptId : 0;
         auto const* death = deaths.deathForAttempt(attemptId);
 
-        return history.commitFinalizedAttempt(
+        bool const committed = history.commitFinalizedAttempt(
             *finalized,
             death,
             priorBestProgress,
             currentBestAttemptId
         );
+        if (!committed) return false;
+
+        // v0.7 prepares, but does not auto-start, a fully owned replay clip.
+        // Once copied, this replay candidate no longer depends on recorder retention.
+        if (auto const* entry = history.entryForAttempt(attemptId)) {
+            replay.load(*finalized, *entry);
+        }
+        return true;
     }
 
     void postUpdate(float dt) {
@@ -82,6 +93,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& fleet = m_fields->fleet;
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
+        auto& replay = m_fields->replay;
 
         if (!m_fields->settingsLoaded) {
             applyDashEchoSettings();
@@ -96,6 +108,9 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
 
         if (!fleet.isAttached()) {
             fleet.attach(renderParent, topGhostZOrder);
+        }
+        if (!replay.isAttached()) {
+            replay.attach(renderParent, topGhostZOrder);
         }
         if (!deathOverlay.isAttached()) {
             deathOverlay.attach(renderParent, topGhostZOrder);
@@ -173,8 +188,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
 
-        // Historical replay pointers must be released before recorder retention
-        // is allowed to mutate during finalization.
         fleet.stop();
         finalizeActiveAttempt(dash_echo::AttemptEndReason::Reset);
 
@@ -204,6 +217,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto& deaths = m_fields->deaths;
         auto& deathOverlay = m_fields->deathOverlay;
         auto& history = m_fields->history;
+        auto& replay = m_fields->replay;
 
         m_fields->captureEnabled = false;
         fleet.stop();
@@ -214,14 +228,14 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const deathStats = deaths.stats();
         auto const historyStats = history.stats();
         log::debug(
-            "DASH ECHO v0.6 session closed: {} attempts started, {} finalized, {} history entries retained / {} committed, {} deaths, {} completions, {} manual resets, PB attempt {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} frames dropped, ghost limit {}, {} death clusters",
+            "DASH ECHO v0.7 session closed: {} attempts started, {} finalized, {} history retained / {} committed, replay candidate {}, {} deaths, {} completions, PB {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} dropped, ghost limit {}, {} clusters",
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
             historyStats.retainedEntries,
             historyStats.totalCommittedAttempts,
+            replay.timeline().sourceAttemptId(),
             historyStats.totalDeaths,
             historyStats.totalCompletions,
-            historyStats.totalManualResets,
             historyStats.currentPersonalBestAttemptId,
             historyStats.currentBestProgressPercent,
             historyStats.longestAttemptSeconds,
@@ -231,6 +245,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             deathStats.clusterCount
         );
 
+        replay.detach();
         deathOverlay.detach();
         PlayLayer::onExit();
     }
