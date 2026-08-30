@@ -1,5 +1,6 @@
 #include "EchoRecorder.hpp"
 
+#include <Geode/Geode.hpp>
 #include <Geode/binding/PlayerObject.hpp>
 
 #include <algorithm>
@@ -13,6 +14,9 @@ constexpr double kMaxContinuousSampleGapSeconds = 0.100;
 constexpr float kTeleportDistanceFloor = 120.0f;
 constexpr float kTeleportSpeedFloor = 3000.0f;
 constexpr float kScaleDiscontinuity = 0.35f;
+constexpr float kCameraJumpDistance = 300.0f;
+constexpr float kCameraScaleDiscontinuity = 0.40f;
+constexpr float kCameraRotationDiscontinuity = 90.0f;
 
 PlayerMode detectPlayerMode(PlayerObject const* player) {
     if (!player) return PlayerMode::Cube;
@@ -43,6 +47,22 @@ bool finiteSnapshot(PlayerSnapshot const& snapshot) {
         std::isfinite(snapshot.scaleY);
 }
 
+bool finiteCameraSnapshot(CameraSnapshot const& snapshot) {
+    return
+        std::isfinite(snapshot.x) &&
+        std::isfinite(snapshot.y) &&
+        std::isfinite(snapshot.rotation) &&
+        std::isfinite(snapshot.scaleX) &&
+        std::isfinite(snapshot.scaleY);
+}
+
+float shortestRotationDistance(float from, float to) {
+    float delta = std::fmod(to - from, 360.0f);
+    if (delta > 180.0f) delta -= 360.0f;
+    if (delta < -180.0f) delta += 360.0f;
+    return std::abs(delta);
+}
+
 } // namespace
 
 void EchoRecorder::beginAttempt() {
@@ -62,7 +82,8 @@ void EchoRecorder::captureFrame(
     float dt,
     float progressPercent,
     PlayerObject* player1,
-    PlayerObject* player2
+    PlayerObject* player2,
+    cocos2d::CCNode* viewportLayer
 ) {
     auto* attempt = mutableActiveAttempt();
     if (!attempt) return;
@@ -91,6 +112,7 @@ void EchoRecorder::captureFrame(
     frame.progressPercent = safeProgress;
     frame.player1 = snapshotPlayer(player1);
     frame.player2 = snapshotPlayer(player2);
+    frame.camera = snapshotCamera(viewportLayer);
 
     if (!attempt->frames.empty()) {
         auto const& previous = attempt->frames.back();
@@ -103,6 +125,11 @@ void EchoRecorder::captureFrame(
         frame.player2ContinuousFromPrevious = canInterpolate(
             previous.player2,
             frame.player2,
+            deltaSeconds
+        );
+        frame.cameraContinuousFromPrevious = canInterpolateCamera(
+            previous.camera,
+            frame.camera,
             deltaSeconds
         );
     }
@@ -227,6 +254,38 @@ bool EchoRecorder::canInterpolate(
     return true;
 }
 
+bool EchoRecorder::canInterpolateCamera(
+    CameraSnapshot const& previous,
+    CameraSnapshot const& current,
+    double deltaSeconds
+) {
+    if (!previous.present || !current.present) return false;
+    if (!finiteCameraSnapshot(previous) || !finiteCameraSnapshot(current)) return false;
+    if (
+        !std::isfinite(deltaSeconds) ||
+        deltaSeconds <= 0.0 ||
+        deltaSeconds > kMaxContinuousSampleGapSeconds
+    ) return false;
+
+    float const distance = std::hypot(
+        current.x - previous.x,
+        current.y - previous.y
+    );
+    if (distance > kCameraJumpDistance) return false;
+
+    if (
+        std::abs(current.scaleX - previous.scaleX) > kCameraScaleDiscontinuity ||
+        std::abs(current.scaleY - previous.scaleY) > kCameraScaleDiscontinuity
+    ) return false;
+
+    if (
+        shortestRotationDistance(previous.rotation, current.rotation) >
+        kCameraRotationDiscontinuity
+    ) return false;
+
+    return true;
+}
+
 bool EchoRecorder::isBetterPersonalBest(
     AttemptRecord const& candidate,
     AttemptRecord const& incumbent
@@ -259,6 +318,20 @@ PlayerSnapshot EchoRecorder::snapshotPlayer(PlayerObject* player) const {
     snapshot.rotation = player->getRotation();
     snapshot.scaleX = player->getScaleX();
     snapshot.scaleY = player->getScaleY();
+    return snapshot;
+}
+
+CameraSnapshot EchoRecorder::snapshotCamera(cocos2d::CCNode* viewportLayer) const {
+    CameraSnapshot snapshot;
+    if (!viewportLayer) return snapshot;
+
+    auto const position = viewportLayer->getPosition();
+    snapshot.present = true;
+    snapshot.x = position.x;
+    snapshot.y = position.y;
+    snapshot.rotation = viewportLayer->getRotation();
+    snapshot.scaleX = viewportLayer->getScaleX();
+    snapshot.scaleY = viewportLayer->getScaleY();
     return snapshot;
 }
 
