@@ -22,6 +22,20 @@ v0.3 removes the ghost-local playback clock.
 
 The ghost is therefore a view over authoritative recorded time rather than a second clock owner.
 
+## Explicit lifecycle hardening
+
+Adversarial source review found a second upstream weakness inherited from v0.1: `captureFrame()` could implicitly begin an attempt whenever no active attempt existed. That behavior risked generating phantom attempts if `postUpdate()` occurred after completion.
+
+v0.3 fixes the generation point:
+
+- `EchoRecorder::captureFrame()` now records only into an explicitly active attempt.
+- `DashEchoPlayLayer` owns whether capture is enabled.
+- initial/normal gameplay explicitly starts an attempt before capture.
+- reset finalizes the old attempt, performs Geometry Dash reset, then explicitly begins the next attempt.
+- completion and layer exit disable capture before finalization.
+
+This prevents future history/analytics features from inheriting phantom attempt records.
+
 ## Frame synchronization
 
 Normal forward playback uses an amortized O(1) frame cursor.
@@ -107,6 +121,7 @@ At v1.0, test at minimum:
 - teleport portals and other abrupt position changes
 - speed portals and high-speed sections
 - pause/resume
+- completion followed by any residual `postUpdate` activity, checking that no phantom attempt is created
 - long attempts
 - an attempt reaching or simulating recorder frame limits
 - backward seek behavior when replay controls are available
