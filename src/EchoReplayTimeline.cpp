@@ -39,7 +39,6 @@ void EchoReplayTimeline::clear() {
 
 void EchoReplayTimeline::start() {
     if (!isLoaded()) return;
-
     if (m_state == ReplayTimelineState::Finished) {
         m_cursorSeconds = m_clip.startTimeSeconds;
     }
@@ -56,9 +55,7 @@ void EchoReplayTimeline::advance(float dt) {
     if (m_state != ReplayTimelineState::Playing) return;
 
     float safeDt = 0.0f;
-    if (std::isfinite(dt)) {
-        safeDt = std::clamp(dt, 0.0f, 0.25f);
-    }
+    if (std::isfinite(dt)) safeDt = std::clamp(dt, 0.0f, 0.25f);
 
     setCursorClamped(m_cursorSeconds + static_cast<double>(safeDt));
     if (m_cursorSeconds >= m_clip.endTimeSeconds) {
@@ -74,41 +71,17 @@ bool EchoReplayTimeline::isPlaying() const {
     return m_state == ReplayTimelineState::Playing;
 }
 
-ReplayTimelineState EchoReplayTimeline::state() const {
-    return m_state;
-}
-
-ReplayClip const* EchoReplayTimeline::clip() const {
-    return isLoaded() ? &m_clip : nullptr;
-}
-
-AttemptRecord const* EchoReplayTimeline::replayAttempt() const {
-    return isLoaded() ? &m_clip.attempt : nullptr;
-}
-
-AttemptHistoryEntry const* EchoReplayTimeline::historyEntry() const {
-    return isLoaded() ? &m_clip.history : nullptr;
-}
-
-std::vector<ReplayTimelineMarker> const& EchoReplayTimeline::markers() const {
-    return m_clip.markers;
-}
-
-std::uint64_t EchoReplayTimeline::sourceAttemptId() const {
-    return isLoaded() ? m_clip.attempt.attemptId : 0;
-}
-
-double EchoReplayTimeline::cursorSeconds() const {
-    return isLoaded() ? m_cursorSeconds : 0.0;
-}
-
-double EchoReplayTimeline::durationSeconds() const {
-    return isLoaded() ? m_clip.durationSeconds : 0.0;
-}
+ReplayTimelineState EchoReplayTimeline::state() const { return m_state; }
+ReplayClip const* EchoReplayTimeline::clip() const { return isLoaded() ? &m_clip : nullptr; }
+AttemptRecord const* EchoReplayTimeline::replayAttempt() const { return isLoaded() ? &m_clip.attempt : nullptr; }
+AttemptHistoryEntry const* EchoReplayTimeline::historyEntry() const { return isLoaded() ? &m_clip.history : nullptr; }
+std::vector<ReplayTimelineMarker> const& EchoReplayTimeline::markers() const { return m_clip.markers; }
+std::uint64_t EchoReplayTimeline::sourceAttemptId() const { return isLoaded() ? m_clip.attempt.attemptId : 0; }
+double EchoReplayTimeline::cursorSeconds() const { return isLoaded() ? m_cursorSeconds : 0.0; }
+double EchoReplayTimeline::durationSeconds() const { return isLoaded() ? m_clip.durationSeconds : 0.0; }
 
 float EchoReplayTimeline::normalizedCursor() const {
     if (!isLoaded() || m_clip.durationSeconds <= 0.0) return 0.0f;
-
     double const normalized =
         (m_cursorSeconds - m_clip.startTimeSeconds) / m_clip.durationSeconds;
     return static_cast<float>(std::clamp(normalized, 0.0, 1.0));
@@ -150,8 +123,11 @@ float EchoReplayTimeline::progressPercentAtCursor() const {
         0.0,
         1.0
     ));
-    float const progress = std::lerp(from.progressPercent, to.progressPercent, alpha);
-    return std::clamp(progress, 0.0f, 100.0f);
+    return std::clamp(
+        std::lerp(from.progressPercent, to.progressPercent, alpha),
+        0.0f,
+        100.0f
+    );
 }
 
 bool EchoReplayTimeline::validateAttempt(AttemptRecord const& attempt) {
@@ -159,12 +135,8 @@ bool EchoReplayTimeline::validateAttempt(AttemptRecord const& attempt) {
 
     double previous = -1.0;
     for (auto const& frame : attempt.frames) {
-        if (!std::isfinite(frame.timeSeconds) || frame.timeSeconds < 0.0) {
-            return false;
-        }
-        if (previous > frame.timeSeconds) {
-            return false;
-        }
+        if (!std::isfinite(frame.timeSeconds) || frame.timeSeconds < 0.0) return false;
+        if (previous > frame.timeSeconds) return false;
         previous = frame.timeSeconds;
     }
 
@@ -212,7 +184,7 @@ void EchoReplayTimeline::buildMarkers() {
 
     if (history.death.present) {
         double const deathTime = std::clamp(
-            history.death.progressPercent >= 0.0f ? history.durationSeconds : m_clip.endTimeSeconds,
+            history.death.timeSeconds,
             m_clip.startTimeSeconds,
             m_clip.endTimeSeconds
         );
@@ -255,9 +227,7 @@ void EchoReplayTimeline::buildMarkers() {
 }
 
 void EchoReplayTimeline::setCursorClamped(double timeSeconds) {
-    if (!isLoaded()) return;
-    if (!std::isfinite(timeSeconds)) return;
-
+    if (!isLoaded() || !std::isfinite(timeSeconds)) return;
     m_cursorSeconds = std::clamp(
         timeSeconds,
         m_clip.startTimeSeconds,
