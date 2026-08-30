@@ -5,9 +5,9 @@
   },
   "id": "doonchy.dash-echo",
   "name": "DASH ECHO",
-  "version": "v0.9.0",
+  "version": "v1.0.0",
   "developer": "Doonchy",
-  "description": "Every attempt leaves a trace. Multighost replay, death intelligence, interactive Replay Studio, and cinematic replay cameras for Geometry Dash.",
+  "description": "Every attempt leaves a trace. Multighost replay, death intelligence, Replay Studio, playback analysis, and cinematic cameras for Geometry Dash.",
   "settings": {
     "ghost-count": {
       "type": "int",
