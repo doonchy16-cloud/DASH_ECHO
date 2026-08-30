@@ -84,6 +84,11 @@ public:
     [[nodiscard]] float normalizedCursor() const;
     [[nodiscard]] float progressPercentAtCursor() const;
     [[nodiscard]] CameraSnapshot cameraAtCursor() const;
+    [[nodiscard]] PlayerSnapshot playerAtCursor(std::uint8_t playerIndex) const;
+    [[nodiscard]] PlayerSnapshot playerAtTime(
+        std::uint8_t playerIndex,
+        double timeSeconds
+    ) const;
     [[nodiscard]] float playbackRate() const;
 
 private:
@@ -97,6 +102,11 @@ private:
     );
     static bool samePlaybackRate(float left, float right);
     static float interpolateRotation(float from, float to, float alpha);
+    static ColorRGB interpolateColor(
+        ColorRGB const& from,
+        ColorRGB const& to,
+        float alpha
+    );
 
     void buildMarkers();
     void setCursorClamped(double timeSeconds);
