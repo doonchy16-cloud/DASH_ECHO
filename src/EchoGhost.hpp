@@ -9,9 +9,18 @@ class SimplePlayer;
 
 namespace cocos2d {
 class CCNode;
+class CCDrawNode;
 }
 
 namespace dash_echo {
+
+struct GhostAuraStyle {
+    bool enabled = false;
+    ColorRGB outerColor {74, 163, 255};
+    ColorRGB innerColor {74, 163, 255};
+    bool innerAccent = false;
+    float size = 1.0f;
+};
 
 class EchoGhost final {
 public:
@@ -24,11 +33,13 @@ public:
     void stop();
     void hide();
     void setOpacity(std::uint8_t opacity);
+    void setAuraStyle(GhostAuraStyle const& style);
 
     [[nodiscard]] bool isAttached() const;
     [[nodiscard]] bool isPlaying() const;
     [[nodiscard]] std::uint64_t sourceAttemptId() const;
     [[nodiscard]] std::uint8_t opacity() const;
+    [[nodiscard]] GhostAuraStyle const& auraStyle() const;
 
 private:
     struct IconProfile {
@@ -58,6 +69,7 @@ private:
     );
     void applyInterpolatedSnapshot(
         SimplePlayer* ghost,
+        cocos2d::CCDrawNode* aura,
         PlayerSnapshot const& from,
         PlayerSnapshot const& to,
         bool continuous,
@@ -66,6 +78,7 @@ private:
     );
     void applySnapshot(
         SimplePlayer* ghost,
+        cocos2d::CCDrawNode* aura,
         PlayerSnapshot const& snapshot,
         VisualCache& cache
     );
@@ -77,6 +90,9 @@ private:
         VisualCache& cache
     );
     void applyOpacity(SimplePlayer* ghost);
+    void ensureAuraNodes();
+    void updateAura(cocos2d::CCDrawNode* aura, PlayerSnapshot const& snapshot);
+    void clearAuras();
     void loadIconProfile();
     void resetVisualCaches();
 
@@ -85,12 +101,17 @@ private:
 
     SimplePlayer* m_player1Ghost = nullptr;
     SimplePlayer* m_player2Ghost = nullptr;
+    cocos2d::CCDrawNode* m_player1Aura = nullptr;
+    cocos2d::CCDrawNode* m_player2Aura = nullptr;
+    cocos2d::CCNode* m_parent = nullptr;
+    int m_zOrder = 0;
 
     AttemptRecord const* m_attempt = nullptr;
     std::size_t m_frameIndex = 0;
     double m_lastSynchronizedTime = 0.0;
     std::uint64_t m_sourceAttemptId = 0;
     std::uint8_t m_opacity = kDefaultOpacity;
+    GhostAuraStyle m_auraStyle;
 
     IconProfile m_icons;
     VisualCache m_player1Cache;
