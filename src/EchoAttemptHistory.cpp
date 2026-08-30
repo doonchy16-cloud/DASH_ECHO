@@ -69,18 +69,10 @@ bool EchoAttemptHistory::commitFinalizedAttempt(
     ++m_totalCommittedAttempts;
 
     switch (entry.outcome) {
-        case AttemptOutcome::Death:
-            ++m_totalDeaths;
-            break;
-        case AttemptOutcome::Reset:
-            ++m_totalManualResets;
-            break;
-        case AttemptOutcome::Completed:
-            ++m_totalCompletions;
-            break;
-        case AttemptOutcome::LayerExit:
-            ++m_totalLayerExits;
-            break;
+        case AttemptOutcome::Death: ++m_totalDeaths; break;
+        case AttemptOutcome::Reset: ++m_totalManualResets; break;
+        case AttemptOutcome::Completed: ++m_totalCompletions; break;
+        case AttemptOutcome::LayerExit: ++m_totalLayerExits; break;
     }
 
     if (entry.personalBestAtFinalization) {
@@ -122,9 +114,7 @@ AttemptHistoryEntry const* EchoAttemptHistory::entryForAttempt(
     if (attemptId == 0) return nullptr;
 
     for (auto it = m_entries.rbegin(); it != m_entries.rend(); ++it) {
-        if (it->attemptId == attemptId) {
-            return &*it;
-        }
+        if (it->attemptId == attemptId) return &*it;
     }
     return nullptr;
 }
@@ -168,15 +158,11 @@ AttemptOutcome EchoAttemptHistory::resolveOutcome(
     }
 
     switch (attempt.endReason) {
-        case AttemptEndReason::Completed:
-            return AttemptOutcome::Completed;
-        case AttemptEndReason::LayerExit:
-            return AttemptOutcome::LayerExit;
+        case AttemptEndReason::Completed: return AttemptOutcome::Completed;
+        case AttemptEndReason::LayerExit: return AttemptOutcome::LayerExit;
         case AttemptEndReason::Reset:
-        case AttemptEndReason::Active:
-            return AttemptOutcome::Reset;
+        case AttemptEndReason::Active: return AttemptOutcome::Reset;
     }
-
     return AttemptOutcome::Reset;
 }
 
@@ -192,24 +178,22 @@ AttemptDeathSummary EchoAttemptHistory::copyDeathSummary(
     result.present = true;
     result.eventId = death->eventId;
     result.playerIndex = death->playerIndex == 2 ? 2 : 1;
+    result.timeSeconds = finiteNonNegative(death->timeSeconds);
     result.progressPercent = finitePercent(death->progressPercent);
     result.x = std::isfinite(death->x) ? death->x : 0.0f;
     result.y = std::isfinite(death->y) ? death->y : 0.0f;
     result.hazardPresent = death->hazardPresent;
     result.hazardObjectId = death->hazardPresent ? death->hazardObjectId : 0;
     result.hazardX =
-        death->hazardPresent && std::isfinite(death->hazardX) ?
-        death->hazardX : 0.0f;
+        death->hazardPresent && std::isfinite(death->hazardX) ? death->hazardX : 0.0f;
     result.hazardY =
-        death->hazardPresent && std::isfinite(death->hazardY) ?
-        death->hazardY : 0.0f;
+        death->hazardPresent && std::isfinite(death->hazardY) ? death->hazardY : 0.0f;
     return result;
 }
 
 void EchoAttemptHistory::trimRetention() {
     while (m_entries.size() > kMaxHistoryEntries) {
         auto eviction = m_entries.end();
-
         for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
             if (
                 m_currentPersonalBestAttemptId != 0 &&
@@ -221,9 +205,7 @@ void EchoAttemptHistory::trimRetention() {
             break;
         }
 
-        if (eviction == m_entries.end()) {
-            break;
-        }
+        if (eviction == m_entries.end()) break;
         m_entries.erase(eviction);
     }
 }
