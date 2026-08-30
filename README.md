@@ -2,68 +2,62 @@
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, attempt history, interactive replay timelines, death intelligence, and cinematic replay tools.
+DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, attempt history, death intelligence, interactive Replay Studio controls, and cinematic replay cameras.
 
 ## Project authority
 
 - Authoritative branch: **main only**
 - Development rule: **no feature branches**
-- Gameplay/build testing: **deferred until v1.0 by project decision**
+- First build/runtime verification gate: **v1.0**
 
 ## Current development state
 
 - Tooling: **Geode CLI 3.7.4**
-- Current Windows SDK/loader baseline: **Geode v5.10.1**
+- Windows SDK/loader baseline: **Geode v5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v0.8.0**
-- Current milestone: **Interactive Replay Studio**
+- Current mod version: **v0.9.0**
+- Current milestone: **Cinematic Replay Camera**
 
-## Implemented through v0.8
+## Implemented through v0.9
 
 - **v0.1:** bounded dual-player attempt recorder
 - **v0.2:** translucent previous-attempt ghost with mode/color reconstruction
 - **v0.3:** recorder-authoritative synchronization, interpolation, and discontinuity guards
 - **v0.4:** configurable 0–6 multiverse ghost fleet with PB preservation
-- **v0.5:** confirmed-death intelligence, clustering, heatmap, and optional markers
+- **v0.5:** confirmed-death intelligence, clustering, 1% heatmap, and optional markers
 - **v0.6:** immutable 4,096-entry attempt-history authority independent from replay retention
-- **v0.7:** owned immutable replay clip + deterministic replay timeline + dedicated replay ghost session
-- **v0.8:** interactive Replay Studio with pause/resume, restart, normalized scrubbing, distinct-frame stepping, five playback speeds, and recorded viewport reproduction
+- **v0.7:** owned immutable replay clip + deterministic replay timeline + dedicated replay ghost
+- **v0.8:** Replay Studio with pause/resume, restart, normalized scrubbing, frame stepping, five speeds, and recorded viewport reproduction
+- **v0.9:** Recorded / Follow / Smooth / Drone / Dynamic Zoom / Death Cam cinematic modes driven from replay data
 
-### v0.8 key architecture
+### v0.9 camera architecture
 
-- `EchoReplayTimeline` remains the only replay-time authority
-- playback speed modifies replay time only; it never changes GD physics or the active-attempt recorder clock
-- seeking and frame stepping pause playback so user input cannot fight an advancing cursor
-- `EchoReplaySession` immediately re-synchronizes the dedicated replay ghost after every cursor-changing command
-- `EchoReplayControls` is presentation-only: launcher, labels, buttons, and native Geometry Dash `Slider`
-- normalized slider values are commands into the timeline; slider state is refreshed back from timeline authority
-- every recorded frame now carries the Geometry Dash object-layer viewport transform
-- Replay Studio reproduces/interpolates that recorded viewport from the same authoritative replay cursor
-- the active attempt's camera transform is snapshotted on Studio open and restored exactly on close
-- Replay Studio hides the multighost fleet while the dedicated replay ghost is active
-- DASH ECHO active-attempt recording time does not advance while Studio mode is open
-- Studio-mode death callbacks are excluded from DASH ECHO analytics to avoid contaminating historical data
-- reset, completion, and exit force Studio closed before normal attempt lifecycle finalization
+- `EchoReplayTimeline` remains replay-time and replay-data authority
+- timeline-level `playerAtCursor` / `playerAtTime` queries reuse recorded continuity boundaries
+- `EchoCinematicCamera` consumes recorded camera/player/history data and outputs a pointer-free `CameraPose`
+- cinematic camera modes never inspect rendered ghost nodes
+- invalid cinematic data falls back to the recorded viewport
+- Smooth resets after non-monotonic/large seeks, restart, source load, or mode changes
+- Drone and Dynamic Zoom are explicitly bounded
+- Death Cam uses real death position/time and is skipped when unavailable
+- Replay Studio UI owns only camera-mode commands/labels
+- `DashEchoPlayLayer` is the only code that applies the final viewport pose
+- the active-attempt camera is still restored exactly when Replay Studio closes
 
 ## Roadmap
 
 | Version | Milestone |
 |---|---|
-| v0.1 | Attempt-state recorder foundation |
-| v0.2 | Previous-attempt ghost |
-| v0.3 | Ghost synchronization + interpolation |
-| v0.4 | Multiple ghosts / Multiverse fleet |
-| v0.5 | Death markers / heatmap foundation |
-| v0.6 | Attempt history authority |
+| v0.1–v0.6 | Recording, ghosts, synchronization, multiverse, death intelligence, history |
 | v0.7 | Owned replay timeline |
-| **v0.8** | **Playback speed / scrubbing / Replay Studio — source implemented** |
-| v0.9 | Cinematic camera |
-| v1.0 | Integrated DASH ECHO release candidate + first gameplay/build test |
+| v0.8 | Interactive Replay Studio |
+| **v0.9** | **Cinematic camera — source implemented** |
+| v1.0 | Integrated release candidate + first build/runtime verification gate |
 
 ## Safety boundary
 
-DASH ECHO does not intentionally modify Geometry Dash save files, account data, physics authority, collision authority, or unrelated Geode mods.
+DASH ECHO does not intentionally modify Geometry Dash save files, account data, player inputs, physics authority, collision authority, completion authority, or unrelated Geode mods.
 
 ## Verification language
 
-Until the v1.0 test gate, milestones may be marked **SOURCE IMPLEMENTED** but must not be called runtime PASS.
+v0.9 is a source milestone only. v1.0 is the first milestone allowed to run the build/runtime verification gate; no runtime PASS is claimed before that evidence exists.
