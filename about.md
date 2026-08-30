@@ -2,12 +2,10 @@
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is being built as a local Geometry Dash replay and training studio: attempt ghosts, replay comparison, death intelligence, history, timelines, and cinematic playback.
+DASH ECHO is being built as a local Geometry Dash replay and training studio: attempt ghosts, history, death intelligence, replay timelines, playback controls, and cinematic tools.
 
-## v0.6 — Attempt History
+## v0.7 — Replay Timeline
 
-DASH ECHO now keeps immutable finalized-attempt summaries independently from heavy replay-frame retention. History records outcome, progress, duration, capture completeness, personal-best improvement, and copied death/hazard context while resolving current replay availability dynamically by attempt ID.
+DASH ECHO now prepares one fully owned immutable replay clip from the latest finalized attempt. The replay clip survives recorder eviction, preserves exact death/PB/completion markers, and drives a dedicated replay ghost from one deterministic timeline cursor at fixed 1x speed.
 
-The history ledger is bounded to 4,096 entries, pins the current personal-best summary, and does not intentionally modify Geometry Dash saves, account state, physics, or collision authority.
-
-Runtime verification remains intentionally deferred until v1.0.
+Interactive replay entry, variable speed, pause, stepping, and scrubbing are the v0.8 milestone. Runtime verification remains intentionally deferred until v1.0.
