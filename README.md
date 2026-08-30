@@ -15,12 +15,12 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 - Tooling: **Geode CLI 3.7.4**
 - Current Windows SDK/loader baseline: **Geode v5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v0.2.0**
-- Current milestone: **Previous-Attempt Ghost**
+- Current mod version: **v0.3.0**
+- Current milestone: **Ghost Synchronization Engine**
 
 > Note: `3.7.4` is the Geode CLI version. The Geode loader/SDK has its own 5.x version line.
 
-## Implemented through v0.2
+## Implemented through v0.3
 
 ### v0.1 — Recorder Foundation
 
@@ -35,19 +35,32 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 
 - one previous finalized attempt selected on reset
 - translucent ghost player 1 + player 2 visuals
-- timestamp-gated discrete playback
-- cube / ship / ball / UFO / wave / robot / spider / swing mode reconstruction
+- cube / ship / ball / UFO / wave / robot / spider / swing reconstruction
 - recorded primary / secondary colors
 - recorded position / rotation / scale / visibility
 - renderer separated from recorder authority
+
+### v0.3 — Ghost Synchronization Engine
+
+- recorder active-attempt time is the single authoritative playback clock
+- ghost no longer accumulates an independent `dt` clock
+- timestamp-bracketed position / scale / color interpolation
+- shortest-path rotation interpolation
+- monotonic frame cursor for normal playback
+- binary-search recovery for backward/non-monotonic seeks
+- explicit continuity flags recorded once for every player sample boundary
+- hard snap boundaries for mode/visibility/presence transitions
+- teleport-like displacement detection to prevent fake cross-screen interpolation
+- large scale-change and long-sample-gap discontinuity guards
+- renderable timeline ends at the last actual recorded sample, avoiding frozen trailing ghosts after frame-cap exhaustion
 
 ## Roadmap
 
 | Version | Milestone |
 |---|---|
 | v0.1 | Attempt-state recorder foundation |
-| **v0.2** | **Previous-attempt ghost — source implemented** |
-| v0.3 | Ghost synchronization + interpolation |
+| v0.2 | Previous-attempt ghost |
+| **v0.3** | **Ghost synchronization + interpolation — source implemented** |
 | v0.4 | Multiple ghosts |
 | v0.5 | Death markers / heatmap foundation |
 | v0.6 | Attempt history |
