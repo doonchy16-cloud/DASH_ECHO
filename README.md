@@ -6,10 +6,14 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, ghost rep
 
 ## Current development state
 
-- Target loader: **Geode 3.7.4**
+- Tooling: **Geode CLI 3.7.4**
+- Current Windows SDK/loader baseline: **Geode v5.10.1**
+- Geometry Dash Windows baseline: **2.2081**
 - Current mod version: **v0.1.0**
 - Current milestone: **Recorder Foundation**
-- Gameplay testing: **deferred until v1.0 by project decision**
+- Gameplay/build testing: **deferred until v1.0 by project decision**
+
+> Note: `3.7.4` is the Geode CLI version. The Geode loader/SDK has its own 5.x version line.
 
 ## v0.1 goal
 
@@ -30,7 +34,7 @@ The v0.1 recorder is intentionally renderer-agnostic. It captures structured per
 | v0.7 | Replay timeline |
 | v0.8 | Playback speed / scrubbing |
 | v0.9 | Cinematic camera |
-| v1.0 | Integrated DASH ECHO release candidate + first gameplay test |
+| v1.0 | Integrated DASH ECHO release candidate + first gameplay/build test |
 
 ## Safety boundary
 
