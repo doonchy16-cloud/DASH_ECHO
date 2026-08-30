@@ -16,6 +16,15 @@ using namespace geode::prelude;
 
 class $modify(DashEchoPlayLayer, PlayLayer) {
     struct Fields {
+        struct ReplayViewportRestore {
+            bool valid = false;
+            float x = 0.0f;
+            float y = 0.0f;
+            float rotation = 0.0f;
+            float scaleX = 1.0f;
+            float scaleY = 1.0f;
+        };
+
         dash_echo::EchoRecorder recorder;
         dash_echo::EchoGhostFleet fleet;
         dash_echo::EchoDeathAnalytics deaths;
@@ -23,6 +32,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         dash_echo::EchoAttemptHistory history;
         dash_echo::EchoReplaySession replay;
         dash_echo::EchoReplayControls* replayControls = nullptr;
+        ReplayViewportRestore replayViewportRestore;
         bool captureEnabled = true;
         bool settingsLoaded = false;
         bool replayStudioOpen = false;
@@ -43,6 +53,46 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         m_fields->settingsLoaded = true;
     }
 
+    void captureActiveViewportForStudio() {
+        auto* layer = this->m_objectLayer;
+        if (!layer) return;
+
+        auto const position = layer->getPosition();
+        auto& restore = m_fields->replayViewportRestore;
+        restore.valid = true;
+        restore.x = position.x;
+        restore.y = position.y;
+        restore.rotation = layer->getRotation();
+        restore.scaleX = layer->getScaleX();
+        restore.scaleY = layer->getScaleY();
+    }
+
+    void applyReplayViewport() {
+        if (!m_fields->replayStudioOpen || !this->m_objectLayer) return;
+
+        auto const camera = m_fields->replay.timeline().cameraAtCursor();
+        if (!camera.present) return;
+
+        this->m_objectLayer->setPosition({ camera.x, camera.y });
+        this->m_objectLayer->setRotation(camera.rotation);
+        this->m_objectLayer->setScaleX(camera.scaleX);
+        this->m_objectLayer->setScaleY(camera.scaleY);
+    }
+
+    void restoreActiveViewportAfterStudio() {
+        auto& restore = m_fields->replayViewportRestore;
+        if (!restore.valid || !this->m_objectLayer) {
+            restore.valid = false;
+            return;
+        }
+
+        this->m_objectLayer->setPosition({ restore.x, restore.y });
+        this->m_objectLayer->setRotation(restore.rotation);
+        this->m_objectLayer->setScaleX(restore.scaleX);
+        this->m_objectLayer->setScaleY(restore.scaleY);
+        restore.valid = false;
+    }
+
     void ensureReplayControls() {
         if (m_fields->replayControls) return;
 
@@ -52,14 +102,18 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
                 m_fields->replayStudioOpen = open;
 
                 if (open) {
-                    // Historical fleet visuals are intentionally hidden while the
-                    // dedicated Replay Studio ghost is authoritative on-screen.
+                    // Save the active-attempt viewport before Replay Studio takes
+                    // visual camera authority, then reproduce the recorded replay
+                    // viewport at the exact same timeline cursor as the ghost.
+                    captureActiveViewportForStudio();
                     m_fields->fleet.hide();
+                    applyReplayViewport();
                     return;
                 }
 
-                // Closing Studio returns visual authority to the active-attempt
-                // multighost fleet without advancing the recorder clock.
+                // Closing Studio restores the exact active-attempt viewport and
+                // returns visual authority to the historical multighost fleet.
+                restoreActiveViewportAfterStudio();
                 if (m_fields->recorder.hasActiveAttempt()) {
                     m_fields->fleet.synchronize(
                         m_fields->recorder.activeElapsedSeconds()
@@ -86,6 +140,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         }
 
         m_fields->replayStudioOpen = false;
+        restoreActiveViewportAfterStudio();
         m_fields->replay.stop();
     }
 
@@ -144,6 +199,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         // advances independently inside the owned historical ReplayClip.
         if (m_fields->replayStudioOpen) {
             m_fields->replay.advance(dt);
+            applyReplayViewport();
             if (m_fields->replayControls) {
                 m_fields->replayControls->refresh();
             }
@@ -195,7 +251,8 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             dt,
             this->getCurrentPercent(),
             this->m_player1,
-            this->m_player2
+            this->m_player2,
+            this->m_objectLayer
         );
 
         fleet.synchronize(recorder.activeElapsedSeconds());
