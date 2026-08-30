@@ -1,44 +1,75 @@
 #pragma once
 
 #include "EchoGhost.hpp"
-#include "EchoRecorder.hpp"
+#include "EchoReplayArchive.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace cocos2d {
 class CCNode;
+class CCDrawNode;
 }
 
 namespace dash_echo {
 
+enum class GhostRole : std::uint8_t {
+    Older,
+    LastAttempt,
+    BestRecorded,
+    LastAndBest
+};
+
+struct GhostFleetVisualSettings {
+    std::uint8_t oldestOpacity = 36;
+    std::uint8_t newestOlderOpacity = 104;
+    float ageFadeStrength = 1.0f;
+
+    bool lastEnabled = true;
+    ColorRGB lastColor {74, 163, 255};
+    std::uint8_t lastOpacity = 190;
+    bool lastAura = true;
+    float lastAuraSize = 1.0f;
+    bool lastTrail = true;
+
+    bool bestEnabled = true;
+    ColorRGB bestColor {255, 213, 74};
+    std::uint8_t bestOpacity = 220;
+    bool bestAura = true;
+    float bestAuraSize = 1.1f;
+    bool bestTrail = true;
+
+    float trailSeconds = 0.55f;
+    float trailWidth = 1.8f;
+    std::uint8_t trailOpacity = 170;
+    bool priorityXray = true;
+};
+
 struct GhostFleetStats {
     std::size_t assignedGhosts = 0;
     std::size_t configuredGhostLimit = 0;
+    std::size_t allocatedGhostSlots = 0;
     std::uint64_t newestAttemptId = 0;
-    std::uint64_t personalBestAttemptId = 0;
+    std::uint64_t bestRecordedAttemptId = 0;
 };
 
 class EchoGhostFleet final {
 public:
-    // Hard rendering cap: each historical attempt may render two SimplePlayers
-    // in dual mode, so six slots means at most twelve ghost player nodes.
-    static constexpr std::size_t kMaxGhosts = 6;
-    static constexpr std::size_t kDefaultGhostLimit = 4;
-    static constexpr std::uint8_t kOldestOpacity = 42;
-    static constexpr std::uint8_t kNewestOpacity = 108;
-    static constexpr std::uint8_t kPersonalBestOpacity = 138;
+    static constexpr std::size_t kMaxGhosts = 256;
+    static constexpr std::size_t kDefaultGhostLimit = 16;
 
     bool attach(cocos2d::CCNode* parent, int topZOrder);
     void detach();
 
     void setGhostLimit(std::size_t ghostLimit);
+    void setVisualSettings(GhostFleetVisualSettings const& settings);
 
-    // Rebuilds selection only at attempt boundaries. Pointers remain stable for
-    // the active attempt because recorder retention trimming occurs before this
-    // call and not during frame capture.
-    void rebuild(EchoRecorder const& recorder);
+    // Selection references archive-owned AttemptRecords. Archive mutation occurs
+    // only at attempt/lifecycle boundaries after fleet.stop(), then rebuild()
+    // reacquires stable pointers.
+    void rebuild(EchoReplayArchive const& archive);
     void synchronize(double timeSeconds);
     void stop();
     void hide();
@@ -52,20 +83,36 @@ private:
     struct Slot {
         EchoGhost ghost;
         AttemptRecord const* attempt = nullptr;
-        bool personalBest = false;
+        GhostRole role = GhostRole::Older;
     };
 
-    static std::uint8_t opacityForRank(
+    bool ensurePool(std::size_t count);
+    void configureSlot(
+        Slot& slot,
         std::size_t rank,
         std::size_t count,
-        bool personalBest
+        std::uint64_t latestAttemptId,
+        std::uint64_t bestAttemptId
     );
+    void rebuildPriorityTrails(double timeSeconds);
+    void drawTrailForSlot(Slot const& slot, double timeSeconds);
 
-    std::array<Slot, kMaxGhosts> m_slots;
+    [[nodiscard]] std::uint8_t opacityForRank(
+        std::size_t rank,
+        std::size_t count,
+        GhostRole role
+    ) const;
+
+    std::vector<std::unique_ptr<Slot>> m_slots;
     std::size_t m_ghostLimit = kDefaultGhostLimit;
     std::size_t m_activeGhosts = 0;
     std::uint64_t m_newestAttemptId = 0;
-    std::uint64_t m_personalBestAttemptId = 0;
+    std::uint64_t m_bestRecordedAttemptId = 0;
+    GhostFleetVisualSettings m_visual;
+
+    cocos2d::CCNode* m_parent = nullptr;
+    cocos2d::CCDrawNode* m_priorityTrailNode = nullptr;
+    int m_topZOrder = 0;
     bool m_attached = false;
 };
 
