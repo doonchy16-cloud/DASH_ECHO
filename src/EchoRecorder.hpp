@@ -51,10 +51,6 @@ struct PlayerSnapshot {
     float scaleY = 1.0f;
 };
 
-// Minimal recorded viewport authority for Replay Studio. This is not a
-// cinematic-camera model; it reproduces the object-layer transform Geometry Dash
-// was using while the attempt was originally recorded so the historical ghost
-// does not run off a frozen active-attempt camera.
 struct CameraSnapshot {
     bool present = false;
     float x = 0.0f;
@@ -93,13 +89,19 @@ struct RecorderStats {
     std::uint64_t framesDropped = 0;
     std::size_t retainedAttempts = 0;
     std::size_t retainedFrames = 0;
+    double captureSampleRate = 120.0;
 };
 
 class EchoRecorder final {
 public:
-    static constexpr std::size_t kMaxFramesPerAttempt = 250'000;
-    static constexpr std::size_t kMaxRetainedAttempts = 64;
-    static constexpr std::size_t kMaxRetainedFrames = 1'000'000;
+    // Recorder is now a current-session working set. Long-lived replay/history
+    // ownership belongs to EchoReplayArchive in v1.1.
+    static constexpr std::size_t kMaxFramesPerAttempt = 75'000;
+    static constexpr std::size_t kMaxRetainedAttempts = 16;
+    static constexpr std::size_t kMaxRetainedFrames = 250'000;
+    static constexpr double kDefaultCaptureSampleRate = 120.0;
+    static constexpr double kMinCaptureSampleRate = 30.0;
+    static constexpr double kMaxCaptureSampleRate = 240.0;
 
     void beginAttempt();
     void captureFrame(
@@ -109,8 +111,18 @@ public:
         PlayerObject* player2,
         cocos2d::CCNode* viewportLayer
     );
+    void captureEventFrame(
+        float progressPercent,
+        PlayerObject* player1,
+        PlayerObject* player2,
+        cocos2d::CCNode* viewportLayer
+    );
     void finalizeAttempt(AttemptEndReason reason);
     void clear();
+
+    void setCaptureSampleRate(double hz);
+    [[nodiscard]] double captureSampleRate() const;
+    void setNextAttemptIdFloor(std::uint64_t nextAttemptId);
 
     [[nodiscard]] bool hasActiveAttempt() const;
     [[nodiscard]] double activeElapsedSeconds() const;
@@ -140,6 +152,14 @@ private:
     [[nodiscard]] AttemptRecord* mutableActiveAttempt();
     [[nodiscard]] PlayerSnapshot snapshotPlayer(PlayerObject* player) const;
     [[nodiscard]] CameraSnapshot snapshotCamera(cocos2d::CCNode* viewportLayer) const;
+    void appendSnapshot(
+        float progressPercent,
+        PlayerObject* player1,
+        PlayerObject* player2,
+        cocos2d::CCNode* viewportLayer,
+        bool replaceSameTimestamp
+    );
+    void updateAttemptProgress(float progressPercent);
     void trimRetention();
 
     std::deque<AttemptRecord> m_attempts;
@@ -151,6 +171,9 @@ private:
     std::uint64_t m_framesDropped = 0;
     std::size_t m_retainedFrames = 0;
     double m_activeElapsedSeconds = 0.0;
+    double m_captureSampleRate = kDefaultCaptureSampleRate;
+    double m_captureSampleInterval = 1.0 / kDefaultCaptureSampleRate;
+    double m_nextRegularSampleTime = 0.0;
 };
 
 } // namespace dash_echo
