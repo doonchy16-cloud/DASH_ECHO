@@ -1,70 +1,74 @@
-# DASH ECHO 👻
+# ECHO_DASH 👻🔥
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, attempt history, death intelligence, interactive Replay Studio controls, and cinematic replay cameras.
+ECHO_DASH is a local Geometry Dash replay and training studio built around historical ghosts, persistent attempt intelligence, death analysis, Replay Studio controls, and cinematic cameras.
 
 ## Project authority
 
 - Authoritative branch: **main only**
 - Development rule: **no feature branches**
-- Release milestone: **v1.0.0**
-- Build/package gate: **PASS**
-- Runtime/in-game gate: **HOLD pending first Geometry Dash verification**
-
-## Current release state
-
+- Current development version: **v1.1.0**
+- Legacy Geode ID intentionally preserved for upgrade/save compatibility: **`doonchy.dash-echo`**
 - Tooling: **Geode CLI 3.7.4**
-- Windows SDK/loader baseline: **Geode 5.10.1**
+- SDK/loader baseline: **Geode 5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v1.0.0**
-- Verified Windows build run: **GitHub Actions #3 / run 33302346780**
-- Verified build source SHA: **2f35150cd72f597749f74455288110affca7c7d0**
-- Verified artifact: **DASH-ECHO-v1.0.0-windows**
-- Packaged mod: **doonchy.dash-echo.geode**
 
-## Implemented v1.0 feature set
+## v1.1.0 — Multiverse & Personalization Rebuild
+
+v1.1.0 replaces the original six-ghost prototype ceiling with a scalable architecture designed for **100+ historical ghosts**, with a supported target ceiling of **256 selected ghosts**.
+
+The player-facing identity is also explicit:
+
+- 🔵 **Last Attempt** — blue spectral priority aura/trail
+- 🟡 **Best Recorded Echo** — golden spectral priority aura/trail
+- 👻 **Older Attempts** — configurable age-faded historical echoes
+- 🎮 **Current Player** — remains visually dominant and authoritative
+
+### Truthful PB model
+
+ECHO_DASH keeps four different concepts separate:
+
+1. **GD Level PB** — Geometry Dash's own saved result.
+2. **Best Recorded Echo** — best run for which ECHO_DASH owns replay data.
+3. **Session Best** — best run in the current PlayLayer session.
+4. **Latest Attempt** — newest finalized attempt.
+
+A session-best or best-recorded replay is never mislabeled as the game's real PB.
+
+### v1.1 architecture targets
+
+- dynamic reusable 0–256 ghost pool instead of a fixed six-slot array
+- configurable 30–240 Hz recorder sampling, default 120 Hz
+- event/death samples that may bypass the regular sampling gate
+- per-level/per-mode persistent summary + replay archive
+- up to 4,096 attempt summaries with bounded replay retention
+- categorized ECHO_DASH Control Center settings
+- priority-only glow/trail effects so large ghost counts remain tractable
+- stronger death markers visible on the first death
+- 100-bucket screen-space death heat strip
+- discoverable Replay Studio launcher, settings access, and attempt navigation
+- existing single authoritative replay timeline preserved
+- existing Recorded / Follow / Smooth / Drone / Dynamic Zoom / Death Cam modes preserved
+
+## Implemented foundation through v1.0
 
 - **v0.1:** bounded dual-player attempt recorder
-- **v0.2:** translucent previous-attempt ghost with mode/color reconstruction
-- **v0.3:** recorder-authoritative synchronization, interpolation, and discontinuity guards
-- **v0.4:** configurable 0–6 multiverse ghost fleet with PB preservation
-- **v0.5:** confirmed-death intelligence, clustering, 1% heatmap, and optional markers
-- **v0.6:** immutable 4,096-entry attempt-history authority independent from replay retention
-- **v0.7:** owned immutable replay clip + deterministic replay timeline + dedicated replay ghost
-- **v0.8:** Replay Studio with pause/resume, restart, normalized scrubbing, frame stepping, five speeds, and recorded viewport reproduction
-- **v0.9:** Recorded / Follow / Smooth / Drone / Dynamic Zoom / Death Cam cinematic modes driven from replay data
-- **v1.0:** pinned/reproducible Windows release build, `.geode` package verification, release hardening, and first runtime verification gate
-
-## Replay and camera architecture
-
-- `EchoReplayTimeline` remains replay-time and replay-data authority
-- timeline-level player sampling reuses recorded continuity boundaries
-- `EchoCinematicCamera` consumes recorded camera/player/history data and outputs a pointer-free `CameraPose`
-- cinematic camera modes never inspect rendered ghost nodes
-- invalid cinematic data falls back to the recorded viewport
-- Smooth resets after non-monotonic/large seeks, restart, source load, or mode changes
-- Drone and Dynamic Zoom are explicitly bounded
-- Death Cam uses real death position/time and is skipped when unavailable
-- Replay Studio UI owns only camera-mode commands/labels
-- `DashEchoPlayLayer` is the only code that applies the final viewport pose
-- the active-attempt camera is restored when Replay Studio closes
-
-## v1.0 build verification
-
-The first v1.0 verification cycle found and repaired two release blockers before obtaining a clean Windows package:
-
-1. Geode CLI 3.7.4 requires a configured profile before SDK binary installation. CI now creates an isolated CI-only profile and explicitly installs the Windows 5.10.1 binaries.
-2. `mod.json` used `v5.10.1`; Geode 5.10.1 requires `5.10.1`. The metadata was corrected.
-
-GitHub Actions run **33302346780** then completed successfully: pinned CLI verification, pinned SDK/binary installation, Windows Release build, `.geode` package collection, and artifact upload all passed.
-
-The produced package was independently inspected after download. It contains the DASH ECHO DLL and embedded metadata identifying `doonchy.dash-echo`, version `v1.0.0`, Geode `5.10.1`, and Geometry Dash Windows `2.2081`.
+- **v0.2:** previous-attempt ghost
+- **v0.3:** recorder-authoritative synchronization and discontinuity-aware interpolation
+- **v0.4:** initial multighost fleet and session-best preservation
+- **v0.5:** confirmed-death intelligence, clustering and 100-bucket heatmap data
+- **v0.6:** immutable attempt-history summaries
+- **v0.7:** owned replay clip + deterministic replay timeline
+- **v0.8:** Replay Studio pause/resume, restart, scrubbing, frame stepping, five speeds, recorded viewport reproduction
+- **v0.9:** cinematic replay cameras
+- **v1.0:** first real Windows build/package verification and first gameplay evidence
+- **v1.1:** scalability, persistence, personalization and visual-truth rebuild
 
 ## Safety boundary
 
-DASH ECHO does not intentionally modify Geometry Dash save files, account data, player inputs, physics authority, collision authority, completion authority, or unrelated Geode mods.
+ECHO_DASH does not intentionally modify player inputs, physics authority, collision authority, death authority, completion authority, Geometry Dash account data, or unrelated mods. Persistent ECHO_DASH data is stored in the Geode-provided mod save area.
 
 ## Verification language
 
-**Build/package PASS does not equal runtime PASS.** v1.0 remains runtime HOLD until the packaged mod is installed in Geometry Dash and its recording, ghost, Replay Studio, cinematic-camera, restoration, and lifecycle behavior are confirmed in-game.
+Source implementation, automated contract tests, Windows build/package verification, and in-game runtime verification are separate gates. **v1.1.0 is not runtime PASS until the new package is tested in Geometry Dash with 100+/256-ghost stress cases, persistence, Replay Studio, blue/gold priority identities, death overlays and camera modes.**
