@@ -8,17 +8,22 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 
 - Authoritative branch: **main only**
 - Development rule: **no feature branches**
-- First build/runtime verification gate: **v1.0**
+- Release milestone: **v1.0.0**
+- Build/package gate: **PASS**
+- Runtime/in-game gate: **HOLD pending first Geometry Dash verification**
 
-## Current development state
+## Current release state
 
 - Tooling: **Geode CLI 3.7.4**
-- Windows SDK/loader baseline: **Geode v5.10.1**
+- Windows SDK/loader baseline: **Geode 5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v0.9.0**
-- Current milestone: **Cinematic Replay Camera**
+- Current mod version: **v1.0.0**
+- Verified Windows build run: **GitHub Actions #3 / run 33302346780**
+- Verified build source SHA: **2f35150cd72f597749f74455288110affca7c7d0**
+- Verified artifact: **DASH-ECHO-v1.0.0-windows**
+- Packaged mod: **doonchy.dash-echo.geode**
 
-## Implemented through v0.9
+## Implemented v1.0 feature set
 
 - **v0.1:** bounded dual-player attempt recorder
 - **v0.2:** translucent previous-attempt ghost with mode/color reconstruction
@@ -29,11 +34,12 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - **v0.7:** owned immutable replay clip + deterministic replay timeline + dedicated replay ghost
 - **v0.8:** Replay Studio with pause/resume, restart, normalized scrubbing, frame stepping, five speeds, and recorded viewport reproduction
 - **v0.9:** Recorded / Follow / Smooth / Drone / Dynamic Zoom / Death Cam cinematic modes driven from replay data
+- **v1.0:** pinned/reproducible Windows release build, `.geode` package verification, release hardening, and first runtime verification gate
 
-### v0.9 camera architecture
+## Replay and camera architecture
 
 - `EchoReplayTimeline` remains replay-time and replay-data authority
-- timeline-level `playerAtCursor` / `playerAtTime` queries reuse recorded continuity boundaries
+- timeline-level player sampling reuses recorded continuity boundaries
 - `EchoCinematicCamera` consumes recorded camera/player/history data and outputs a pointer-free `CameraPose`
 - cinematic camera modes never inspect rendered ghost nodes
 - invalid cinematic data falls back to the recorded viewport
@@ -42,17 +48,18 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - Death Cam uses real death position/time and is skipped when unavailable
 - Replay Studio UI owns only camera-mode commands/labels
 - `DashEchoPlayLayer` is the only code that applies the final viewport pose
-- the active-attempt camera is still restored exactly when Replay Studio closes
+- the active-attempt camera is restored when Replay Studio closes
 
-## Roadmap
+## v1.0 build verification
 
-| Version | Milestone |
-|---|---|
-| v0.1–v0.6 | Recording, ghosts, synchronization, multiverse, death intelligence, history |
-| v0.7 | Owned replay timeline |
-| v0.8 | Interactive Replay Studio |
-| **v0.9** | **Cinematic camera — source implemented** |
-| v1.0 | Integrated release candidate + first build/runtime verification gate |
+The first v1.0 verification cycle found and repaired two release blockers before obtaining a clean Windows package:
+
+1. Geode CLI 3.7.4 requires a configured profile before SDK binary installation. CI now creates an isolated CI-only profile and explicitly installs the Windows 5.10.1 binaries.
+2. `mod.json` used `v5.10.1`; Geode 5.10.1 requires `5.10.1`. The metadata was corrected.
+
+GitHub Actions run **33302346780** then completed successfully: pinned CLI verification, pinned SDK/binary installation, Windows Release build, `.geode` package collection, and artifact upload all passed.
+
+The produced package was independently inspected after download. It contains the DASH ECHO DLL and embedded metadata identifying `doonchy.dash-echo`, version `v1.0.0`, Geode `5.10.1`, and Geometry Dash Windows `2.2081`.
 
 ## Safety boundary
 
@@ -60,4 +67,4 @@ DASH ECHO does not intentionally modify Geometry Dash save files, account data, 
 
 ## Verification language
 
-v0.9 is a source milestone only. v1.0 is the first milestone allowed to run the build/runtime verification gate; no runtime PASS is claimed before that evidence exists.
+**Build/package PASS does not equal runtime PASS.** v1.0 remains runtime HOLD until the packaged mod is installed in Geometry Dash and its recording, ghost, Replay Studio, cinematic-camera, restoration, and lifecycle behavior are confirmed in-game.
