@@ -96,6 +96,7 @@ public:
     [[nodiscard]] double activeElapsedSeconds() const;
     [[nodiscard]] AttemptRecord const* activeAttempt() const;
     [[nodiscard]] AttemptRecord const* latestFinalizedAttempt() const;
+    [[nodiscard]] AttemptRecord const* personalBestAttempt() const;
     [[nodiscard]] std::deque<AttemptRecord> const& attempts() const;
     [[nodiscard]] RecorderStats stats() const;
 
@@ -104,6 +105,10 @@ private:
         PlayerSnapshot const& previous,
         PlayerSnapshot const& current,
         double deltaSeconds
+    );
+    static bool isBetterPersonalBest(
+        AttemptRecord const& candidate,
+        AttemptRecord const& incumbent
     );
 
     [[nodiscard]] AttemptRecord* mutableActiveAttempt();
