@@ -1,0 +1,176 @@
+#include "EchoRecorder.hpp"
+
+#include <Geode/binding/PlayerObject.hpp>
+
+#include <algorithm>
+#include <cmath>
+
+namespace dash_echo {
+
+void EchoRecorder::beginAttempt() {
+    if (hasActiveAttempt()) {
+        return;
+    }
+
+    AttemptRecord attempt;
+    attempt.attemptId = m_nextAttemptId++;
+    attempt.frames.reserve(4096);
+    m_attempts.push_back(std::move(attempt));
+
+    m_activeElapsedSeconds = 0.0;
+    ++m_attemptsStarted;
+    trimRetention();
+}
+
+void EchoRecorder::captureFrame(
+    float dt,
+    float progressPercent,
+    PlayerObject* player1,
+    PlayerObject* player2
+) {
+    if (!hasActiveAttempt()) {
+        beginAttempt();
+    }
+
+    auto* attempt = mutableActiveAttempt();
+    if (!attempt) {
+        return;
+    }
+
+    float safeDt = 0.0f;
+    if (std::isfinite(dt)) {
+        safeDt = std::clamp(dt, 0.0f, 0.25f);
+    }
+    m_activeElapsedSeconds += static_cast<double>(safeDt);
+
+    float safeProgress = 0.0f;
+    if (std::isfinite(progressPercent)) {
+        safeProgress = std::clamp(progressPercent, 0.0f, 100.0f);
+    }
+
+    attempt->durationSeconds = m_activeElapsedSeconds;
+    attempt->maxProgressPercent = std::max(attempt->maxProgressPercent, safeProgress);
+
+    if (attempt->frames.size() >= kMaxFramesPerAttempt) {
+        ++m_framesDropped;
+        return;
+    }
+
+    FrameRecord frame;
+    frame.sequence = m_nextFrameSequence++;
+    frame.timeSeconds = m_activeElapsedSeconds;
+    frame.progressPercent = safeProgress;
+    frame.player1 = snapshotPlayer(player1);
+    frame.player2 = snapshotPlayer(player2);
+
+    attempt->frames.push_back(std::move(frame));
+    ++m_framesCaptured;
+    ++m_retainedFrames;
+}
+
+void EchoRecorder::finalizeAttempt(AttemptEndReason reason) {
+    auto* attempt = mutableActiveAttempt();
+    if (!attempt) {
+        return;
+    }
+
+    attempt->durationSeconds = m_activeElapsedSeconds;
+    attempt->endReason = reason;
+    attempt->finalized = true;
+    ++m_attemptsFinalized;
+
+    m_activeElapsedSeconds = 0.0;
+    trimRetention();
+}
+
+void EchoRecorder::clear() {
+    m_attempts.clear();
+    m_nextAttemptId = 1;
+    m_nextFrameSequence = 1;
+    m_attemptsStarted = 0;
+    m_attemptsFinalized = 0;
+    m_framesCaptured = 0;
+    m_framesDropped = 0;
+    m_retainedFrames = 0;
+    m_activeElapsedSeconds = 0.0;
+}
+
+bool EchoRecorder::hasActiveAttempt() const {
+    return !m_attempts.empty() && !m_attempts.back().finalized;
+}
+
+AttemptRecord const* EchoRecorder::activeAttempt() const {
+    if (!hasActiveAttempt()) {
+        return nullptr;
+    }
+    return &m_attempts.back();
+}
+
+AttemptRecord const* EchoRecorder::latestFinalizedAttempt() const {
+    for (auto it = m_attempts.rbegin(); it != m_attempts.rend(); ++it) {
+        if (it->finalized) {
+            return &*it;
+        }
+    }
+    return nullptr;
+}
+
+std::deque<AttemptRecord> const& EchoRecorder::attempts() const {
+    return m_attempts;
+}
+
+RecorderStats EchoRecorder::stats() const {
+    RecorderStats result;
+    result.attemptsStarted = m_attemptsStarted;
+    result.attemptsFinalized = m_attemptsFinalized;
+    result.framesCaptured = m_framesCaptured;
+    result.framesDropped = m_framesDropped;
+    result.retainedAttempts = m_attempts.size();
+    result.retainedFrames = m_retainedFrames;
+    return result;
+}
+
+AttemptRecord* EchoRecorder::mutableActiveAttempt() {
+    if (!hasActiveAttempt()) {
+        return nullptr;
+    }
+    return &m_attempts.back();
+}
+
+PlayerSnapshot EchoRecorder::snapshotPlayer(PlayerObject* player) const {
+    PlayerSnapshot snapshot;
+    if (!player) {
+        return snapshot;
+    }
+
+    auto const position = player->getPosition();
+    snapshot.present = true;
+    snapshot.visible = player->isVisible();
+    snapshot.x = position.x;
+    snapshot.y = position.y;
+    snapshot.rotation = player->getRotation();
+    snapshot.scaleX = player->getScaleX();
+    snapshot.scaleY = player->getScaleY();
+    return snapshot;
+}
+
+void EchoRecorder::trimRetention() {
+    while (
+        (m_attempts.size() > kMaxRetainedAttempts || m_retainedFrames > kMaxRetainedFrames) &&
+        !m_attempts.empty()
+    ) {
+        auto const& oldest = m_attempts.front();
+        if (!oldest.finalized) {
+            break;
+        }
+
+        if (oldest.frames.size() <= m_retainedFrames) {
+            m_retainedFrames -= oldest.frames.size();
+        } else {
+            m_retainedFrames = 0;
+        }
+        m_attempts.pop_front();
+    }
+}
+
+} // namespace dash_echo
