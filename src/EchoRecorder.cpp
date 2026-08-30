@@ -80,6 +80,7 @@ void EchoRecorder::captureFrame(
     attempt->maxProgressPercent = std::max(attempt->maxProgressPercent, safeProgress);
 
     if (attempt->frames.size() >= kMaxFramesPerAttempt) {
+        ++attempt->framesDropped;
         ++m_framesDropped;
         return;
     }
@@ -147,6 +148,17 @@ double EchoRecorder::activeElapsedSeconds() const {
 AttemptRecord const* EchoRecorder::activeAttempt() const {
     if (!hasActiveAttempt()) return nullptr;
     return &m_attempts.back();
+}
+
+AttemptRecord const* EchoRecorder::attemptById(std::uint64_t attemptId) const {
+    if (attemptId == 0) return nullptr;
+
+    for (auto const& attempt : m_attempts) {
+        if (attempt.attemptId == attemptId) {
+            return &attempt;
+        }
+    }
+    return nullptr;
 }
 
 AttemptRecord const* EchoRecorder::latestFinalizedAttempt() const {
