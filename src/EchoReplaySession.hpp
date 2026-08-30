@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EchoCinematicCamera.hpp"
 #include "EchoGhost.hpp"
 #include "EchoReplayTimeline.hpp"
 
@@ -35,6 +36,15 @@ public:
     bool stepPreviousFrame();
     bool stepNextFrame();
 
+    void cycleCameraMode();
+    void resetCameraMode();
+    [[nodiscard]] CinematicCameraMode cameraMode() const;
+    [[nodiscard]] char const* cameraModeName() const;
+    [[nodiscard]] CameraPose cameraPose(
+        float viewportWidth,
+        float viewportHeight
+    );
+
     [[nodiscard]] bool isAttached() const;
     [[nodiscard]] bool isLoaded() const;
     [[nodiscard]] bool isPlaying() const;
@@ -44,9 +54,11 @@ public:
 private:
     void bindGhostToOwnedClip();
     void synchronizeGhost();
+    void resetCinematicContinuity();
 
     EchoReplayTimeline m_timeline;
     EchoGhost m_ghost;
+    EchoCinematicCamera m_camera;
 };
 
 } // namespace dash_echo
