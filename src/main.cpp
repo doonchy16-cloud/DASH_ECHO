@@ -1,7 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 
-#include "EchoGhost.hpp"
+#include "EchoGhostFleet.hpp"
 #include "EchoRecorder.hpp"
 
 using namespace geode::prelude;
@@ -9,7 +9,7 @@ using namespace geode::prelude;
 class $modify(DashEchoPlayLayer, PlayLayer) {
     struct Fields {
         dash_echo::EchoRecorder recorder;
-        dash_echo::EchoGhost ghost;
+        dash_echo::EchoGhostFleet fleet;
         bool captureEnabled = true;
     };
 
@@ -17,18 +17,18 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         PlayLayer::postUpdate(dt);
 
         auto& recorder = m_fields->recorder;
-        auto& ghost = m_fields->ghost;
+        auto& fleet = m_fields->fleet;
 
-        if (!ghost.isAttached()) {
+        if (!fleet.isAttached()) {
             cocos2d::CCNode* parent = this->m_objectLayer;
-            int zOrder = 0;
+            int topGhostZOrder = 0;
 
             if (this->m_player1 && this->m_player1->getParent()) {
                 parent = this->m_player1->getParent();
-                zOrder = this->m_player1->getZOrder() - 1;
+                topGhostZOrder = this->m_player1->getZOrder() - 1;
             }
 
-            ghost.attach(parent, zOrder);
+            fleet.attach(parent, topGhostZOrder);
         }
 
         if (!m_fields->captureEnabled) {
@@ -46,16 +46,18 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             this->m_player2
         );
 
-        // One authoritative clock: the current attempt recorder timeline.
-        // The ghost never accumulates its own dt, eliminating clock drift.
-        ghost.synchronize(recorder.activeElapsedSeconds());
+        // Every historical ghost consumes the exact same authoritative current-
+        // attempt clock. No fleet member accumulates an independent timeline.
+        fleet.synchronize(recorder.activeElapsedSeconds());
     }
 
     void resetLevel() {
         auto& recorder = m_fields->recorder;
-        auto& ghost = m_fields->ghost;
+        auto& fleet = m_fields->fleet;
 
-        ghost.stop();
+        // Release all historical AttemptRecord references before recorder
+        // finalization/retention is allowed to evict old attempts.
+        fleet.stop();
 
         if (recorder.hasActiveAttempt()) {
             recorder.finalizeAttempt(dash_echo::AttemptEndReason::Reset);
@@ -65,15 +67,18 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
 
         m_fields->captureEnabled = true;
         recorder.beginAttempt();
-        ghost.play(recorder.latestFinalizedAttempt());
+
+        // Retention trimming has already completed. Selection now remains stable
+        // for the entire active attempt and is rebuilt only at the next boundary.
+        fleet.rebuild(recorder);
     }
 
     void levelComplete() {
         auto& recorder = m_fields->recorder;
-        auto& ghost = m_fields->ghost;
+        auto& fleet = m_fields->fleet;
 
         m_fields->captureEnabled = false;
-        ghost.stop();
+        fleet.stop();
 
         if (recorder.hasActiveAttempt()) {
             recorder.finalizeAttempt(dash_echo::AttemptEndReason::Completed);
@@ -84,22 +89,24 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
 
     void onExit() {
         auto& recorder = m_fields->recorder;
-        auto& ghost = m_fields->ghost;
+        auto& fleet = m_fields->fleet;
 
         m_fields->captureEnabled = false;
-        ghost.stop();
+        fleet.stop();
 
         if (recorder.hasActiveAttempt()) {
             recorder.finalizeAttempt(dash_echo::AttemptEndReason::LayerExit);
         }
 
-        auto const stats = recorder.stats();
+        auto const recorderStats = recorder.stats();
+        auto const fleetStats = fleet.stats();
         log::debug(
-            "DASH ECHO v0.3 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped",
-            stats.attemptsStarted,
-            stats.attemptsFinalized,
-            stats.retainedFrames,
-            stats.framesDropped
+            "DASH ECHO v0.4 session closed: {} attempts started, {} finalized, {} frames retained, {} frames dropped, PB attempt {}",
+            recorderStats.attemptsStarted,
+            recorderStats.attemptsFinalized,
+            recorderStats.retainedFrames,
+            recorderStats.framesDropped,
+            fleetStats.personalBestAttemptId
         );
 
         PlayLayer::onExit();
