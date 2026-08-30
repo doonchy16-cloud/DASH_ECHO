@@ -35,8 +35,6 @@ void EchoGhostFleet::detach() {
     stop();
     for (auto& slot : m_slots) {
         slot.ghost.detach();
-        slot.attempt = nullptr;
-        slot.personalBest = false;
     }
     m_attached = false;
 }
@@ -44,12 +42,7 @@ void EchoGhostFleet::detach() {
 void EchoGhostFleet::rebuild(EchoRecorder const& recorder) {
     stop();
 
-    for (auto& slot : m_slots) {
-        slot.attempt = nullptr;
-        slot.personalBest = false;
-    }
-
-    auto const* personalBest = findPersonalBest(recorder);
+    auto const* personalBest = recorder.personalBestAttempt();
     m_personalBestAttemptId = personalBest ? personalBest->attemptId : 0;
 
     std::vector<AttemptRecord const*> selectedNewestFirst;
@@ -125,6 +118,8 @@ void EchoGhostFleet::rebuild(EchoRecorder const& recorder) {
 
     for (std::size_t i = m_activeGhosts; i < m_slots.size(); ++i) {
         m_slots[i].ghost.stop();
+        m_slots[i].attempt = nullptr;
+        m_slots[i].personalBest = false;
     }
 }
 
@@ -137,6 +132,8 @@ void EchoGhostFleet::synchronize(double timeSeconds) {
 void EchoGhostFleet::stop() {
     for (auto& slot : m_slots) {
         slot.ghost.stop();
+        slot.attempt = nullptr;
+        slot.personalBest = false;
     }
     m_activeGhosts = 0;
     m_newestAttemptId = 0;
@@ -162,35 +159,6 @@ GhostFleetStats EchoGhostFleet::stats() const {
         m_newestAttemptId,
         m_personalBestAttemptId
     };
-}
-
-AttemptRecord const* EchoGhostFleet::findPersonalBest(EchoRecorder const& recorder) {
-    AttemptRecord const* best = nullptr;
-
-    for (auto const& attempt : recorder.attempts()) {
-        if (!attempt.finalized || attempt.frames.empty()) {
-            continue;
-        }
-
-        if (!best) {
-            best = &attempt;
-            continue;
-        }
-
-        if (attempt.maxProgressPercent > best->maxProgressPercent) {
-            best = &attempt;
-            continue;
-        }
-
-        if (
-            attempt.maxProgressPercent == best->maxProgressPercent &&
-            attempt.attemptId > best->attemptId
-        ) {
-            best = &attempt;
-        }
-    }
-
-    return best;
 }
 
 std::uint8_t EchoGhostFleet::opacityForRank(
