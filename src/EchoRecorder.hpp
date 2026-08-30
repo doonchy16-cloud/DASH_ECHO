@@ -16,9 +16,31 @@ enum class AttemptEndReason {
     LayerExit
 };
 
+enum class PlayerMode : std::uint8_t {
+    Cube,
+    Ship,
+    Ball,
+    Ufo,
+    Wave,
+    Robot,
+    Spider,
+    Swing
+};
+
+struct ColorRGB {
+    std::uint8_t r = 255;
+    std::uint8_t g = 255;
+    std::uint8_t b = 255;
+
+    bool operator==(ColorRGB const&) const = default;
+};
+
 struct PlayerSnapshot {
     bool present = false;
     bool visible = false;
+    PlayerMode mode = PlayerMode::Cube;
+    ColorRGB color1;
+    ColorRGB color2;
     float x = 0.0f;
     float y = 0.0f;
     float rotation = 0.0f;
