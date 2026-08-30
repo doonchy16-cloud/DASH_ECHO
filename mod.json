@@ -1,0 +1,11 @@
+{
+  "geode": "v5.10.1",
+  "gd": {
+    "win": "2.2081"
+  },
+  "id": "doonchy.dash-echo",
+  "name": "DASH ECHO",
+  "version": "v0.1.0",
+  "developer": "Doonchy",
+  "description": "Every attempt leaves a trace. Attempt recording, ghost replay, analysis, and cinematic tools for Geometry Dash."
+}
