@@ -37,9 +37,6 @@ bool EchoDeathAnalytics::recordDeath(DeathEvent event) {
         return false;
     }
 
-    // A Geometry Dash attempt has one terminal death outcome. destroyPlayer may
-    // be reached more than once by chained hooks or dual-player cleanup, so the
-    // attempt ID is the authoritative deduplication key.
     if (event.attemptId == m_lastRecordedAttemptId) {
         return false;
     }
@@ -63,9 +60,6 @@ bool EchoDeathAnalytics::recordDeath(DeathEvent event) {
     m_lastRecordedAttemptId = event.attemptId;
     ++m_totalDeathsRecorded;
 
-    // Aggregates are lifetime session authority. Raw event retention is a
-    // separate bounded detail cache, so crossing 4096 deaths never causes an
-    // O(N^2) full analytics rebuild on every later death.
     accumulateCluster(event);
     accumulateHeatmap(event);
     trimRawEventRetention();
@@ -84,6 +78,17 @@ void EchoDeathAnalytics::clear() {
     m_totalDeathsRecorded = 0;
     m_unclusteredDeaths = 0;
     ++m_revision;
+}
+
+DeathEvent const* EchoDeathAnalytics::deathForAttempt(std::uint64_t attemptId) const {
+    if (attemptId == 0) return nullptr;
+
+    for (auto it = m_events.rbegin(); it != m_events.rend(); ++it) {
+        if (it->attemptId == attemptId) {
+            return &*it;
+        }
+    }
+    return nullptr;
 }
 
 std::deque<DeathEvent> const& EchoDeathAnalytics::events() const {
@@ -160,8 +165,6 @@ bool EchoDeathAnalytics::clustersCanMerge(
         left.meanProgressPercent - right.meanProgressPercent
     );
 
-    // The merge threshold is tighter than event admission. This heals clusters
-    // split by centroid drift without collapsing nearby-but-distinct hazards.
     return
         distance <= kClusterRadius * 0.70f &&
         progressDistance <= kClusterProgressWindow * 0.70f;
@@ -181,14 +184,8 @@ void EchoDeathAnalytics::absorbEvent(
     cluster.meanProgressPercent =
         (cluster.meanProgressPercent * oldWeight + event.progressPercent) / newWeight;
 
-    cluster.minProgressPercent = std::min(
-        cluster.minProgressPercent,
-        event.progressPercent
-    );
-    cluster.maxProgressPercent = std::max(
-        cluster.maxProgressPercent,
-        event.progressPercent
-    );
+    cluster.minProgressPercent = std::min(cluster.minProgressPercent, event.progressPercent);
+    cluster.maxProgressPercent = std::max(cluster.maxProgressPercent, event.progressPercent);
     cluster.lastAttemptId = std::max(cluster.lastAttemptId, event.attemptId);
     ++cluster.deathCount;
 }
@@ -218,22 +215,10 @@ void EchoDeathAnalytics::absorbCluster(
          source.meanProgressPercent * sourceWeight) /
         totalWeight;
 
-    target.minProgressPercent = std::min(
-        target.minProgressPercent,
-        source.minProgressPercent
-    );
-    target.maxProgressPercent = std::max(
-        target.maxProgressPercent,
-        source.maxProgressPercent
-    );
-    target.firstAttemptId = std::min(
-        target.firstAttemptId,
-        source.firstAttemptId
-    );
-    target.lastAttemptId = std::max(
-        target.lastAttemptId,
-        source.lastAttemptId
-    );
+    target.minProgressPercent = std::min(target.minProgressPercent, source.minProgressPercent);
+    target.maxProgressPercent = std::max(target.maxProgressPercent, source.maxProgressPercent);
+    target.firstAttemptId = std::min(target.firstAttemptId, source.firstAttemptId);
+    target.lastAttemptId = std::max(target.lastAttemptId, source.lastAttemptId);
     target.clusterId = std::min(target.clusterId, source.clusterId);
     target.deathCount += source.deathCount;
 }
@@ -288,8 +273,6 @@ void EchoDeathAnalytics::accumulateCluster(DeathEvent const& event) {
     }
 
     if (m_clusters.size() >= kMaxClusters) {
-        // Do not corrupt cluster meaning merely to preserve a perfect count.
-        // Heatmap and total-death authority still record this event truthfully.
         ++m_unclusteredDeaths;
         return;
     }
@@ -323,9 +306,7 @@ void EchoDeathAnalytics::mergeClusterAt(std::size_t index) {
             m_clusters.erase(
                 m_clusters.begin() + static_cast<std::ptrdiff_t>(other)
             );
-            if (other < index) {
-                --index;
-            }
+            if (other < index) --index;
             merged = true;
             break;
         }
@@ -335,9 +316,7 @@ void EchoDeathAnalytics::mergeClusterAt(std::size_t index) {
 void EchoDeathAnalytics::accumulateHeatmap(DeathEvent const& event) {
     float const bounded = std::clamp(event.progressPercent, 0.0f, 100.0f);
     std::size_t index = static_cast<std::size_t>(std::floor(bounded));
-    if (index >= kHeatmapBucketCount) {
-        index = kHeatmapBucketCount - 1;
-    }
+    if (index >= kHeatmapBucketCount) index = kHeatmapBucketCount - 1;
 
     ++m_heatmap[index].deathCount;
     normalizeHeatmap();
