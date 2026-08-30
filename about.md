@@ -1,13 +1,21 @@
-# DASH ECHO 👻
+# ECHO_DASH 👻🔥
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is a local Geometry Dash replay and training studio: multighost attempts, history, death intelligence, interactive replay timelines, playback controls, and cinematic camera modes.
+ECHO_DASH turns your past Geometry Dash attempts into a replayable multiverse: historical ghosts, persistent attempt history, death intelligence, Replay Studio controls, and cinematic cameras.
 
-## v0.9 — Cinematic Replay Camera
+## v1.1.0 — Multiverse & Personalization Rebuild
 
-Replay Studio now has six source-level camera modes: Recorded, Follow, Smooth, Drone, Dynamic Zoom, and Death Cam. They are derived from the same immutable replay clip and authoritative timeline cursor that drive the replay ghost.
+v1.1.0 is the large post-runtime-test rebuild. It raises the design from the original six-ghost prototype toward a supported **0–256 ghost** multiverse, adds persistent per-level history/replays, and makes the visual language explicit:
 
-Recorded remains the deterministic compatibility fallback. Cinematic calculations consume recorded camera/player/death data rather than live ghost nodes, and invalid calculations fall back to the recorded viewport. The active live-attempt viewport is still restored when Replay Studio closes.
+- **Last Attempt:** blue spectral priority identity.
+- **Best Recorded Echo:** golden spectral priority identity.
+- **Older Attempts:** configurable age-faded echoes.
 
-v1.0 is the first build/runtime verification gate.
+ECHO_DASH also separates Geometry Dash's actual saved PB from the best replay ECHO_DASH owns. A historical replay is never called the real PB unless the evidence actually matches.
+
+The v1.1 Control Center adds substantially more personalization for ghost count, opacity, priority colors/aura/trails, death intelligence, heat strip, Replay Studio, recording sample rate, replay retention, disk budget, rendering quality, and diagnostics.
+
+ECHO_DASH remains an observer: it does not intentionally control player input, physics, collision, death, or completion authority.
+
+**Build verification and in-game runtime verification are separate gates.**
