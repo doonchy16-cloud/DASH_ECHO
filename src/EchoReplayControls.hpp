@@ -38,6 +38,7 @@ private:
     void onPreviousFrame(cocos2d::CCObject* sender);
     void onNextFrame(cocos2d::CCObject* sender);
     void onSpeed(cocos2d::CCObject* sender);
+    void onCamera(cocos2d::CCObject* sender);
     void onScrub(cocos2d::CCObject* sender);
 
     void setStudioOpen(bool open);
@@ -55,6 +56,7 @@ private:
     cocos2d::CCLabelBMFont* m_progressLabel = nullptr;
     cocos2d::CCLabelBMFont* m_playLabel = nullptr;
     cocos2d::CCLabelBMFont* m_speedLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_cameraLabel = nullptr;
 };
 
 } // namespace dash_echo
