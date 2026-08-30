@@ -1,0 +1,13 @@
+build/
+build-*/
+.cache/
+.vscode/
+.idea/
+*.geode
+*.dll
+*.dylib
+*.so
+*.pdb
+*.obj
+*.o
+CMakeUserPresets.json
