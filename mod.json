@@ -5,7 +5,17 @@
   },
   "id": "doonchy.dash-echo",
   "name": "DASH ECHO",
-  "version": "v0.3.0",
+  "version": "v0.4.0",
   "developer": "Doonchy",
-  "description": "Every attempt leaves a trace. Attempt recording, synchronized ghost replay, analysis, and cinematic tools for Geometry Dash."
+  "description": "Every attempt leaves a trace. Attempt recording, synchronized multighost replay, analysis, and cinematic tools for Geometry Dash.",
+  "settings": {
+    "ghost-count": {
+      "type": "int",
+      "name": "Ghost Count",
+      "description": "How many historical attempts DASH ECHO should render at once. 0 disables ghost rendering; maximum 6.",
+      "default": 4,
+      "min": 0,
+      "max": 6
+    }
+  }
 }
