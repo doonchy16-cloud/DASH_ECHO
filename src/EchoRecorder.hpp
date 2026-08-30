@@ -6,6 +6,9 @@
 #include <vector>
 
 class PlayerObject;
+namespace cocos2d {
+class CCNode;
+}
 
 namespace dash_echo {
 
@@ -48,14 +51,29 @@ struct PlayerSnapshot {
     float scaleY = 1.0f;
 };
 
+// Minimal recorded viewport authority for Replay Studio. This is not a
+// cinematic-camera model; it reproduces the object-layer transform Geometry Dash
+// was using while the attempt was originally recorded so the historical ghost
+// does not run off a frozen active-attempt camera.
+struct CameraSnapshot {
+    bool present = false;
+    float x = 0.0f;
+    float y = 0.0f;
+    float rotation = 0.0f;
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+};
+
 struct FrameRecord {
     std::uint64_t sequence = 0;
     double timeSeconds = 0.0;
     float progressPercent = 0.0f;
     PlayerSnapshot player1;
     PlayerSnapshot player2;
+    CameraSnapshot camera;
     bool player1ContinuousFromPrevious = false;
     bool player2ContinuousFromPrevious = false;
+    bool cameraContinuousFromPrevious = false;
 };
 
 struct AttemptRecord {
@@ -88,7 +106,8 @@ public:
         float dt,
         float progressPercent,
         PlayerObject* player1,
-        PlayerObject* player2
+        PlayerObject* player2,
+        cocos2d::CCNode* viewportLayer
     );
     void finalizeAttempt(AttemptEndReason reason);
     void clear();
@@ -108,6 +127,11 @@ private:
         PlayerSnapshot const& current,
         double deltaSeconds
     );
+    static bool canInterpolateCamera(
+        CameraSnapshot const& previous,
+        CameraSnapshot const& current,
+        double deltaSeconds
+    );
     static bool isBetterPersonalBest(
         AttemptRecord const& candidate,
         AttemptRecord const& incumbent
@@ -115,6 +139,7 @@ private:
 
     [[nodiscard]] AttemptRecord* mutableActiveAttempt();
     [[nodiscard]] PlayerSnapshot snapshotPlayer(PlayerObject* player) const;
+    [[nodiscard]] CameraSnapshot snapshotCamera(cocos2d::CCNode* viewportLayer) const;
     void trimRetention();
 
     std::deque<AttemptRecord> m_attempts;
