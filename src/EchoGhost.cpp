@@ -27,8 +27,8 @@ bool EchoGhost::attach(cocos2d::CCNode* parent, int zOrder) {
         return false;
     }
 
-    player1Ghost->setOpacity(kGhostOpacity);
-    player2Ghost->setOpacity(kGhostOpacity);
+    applyOpacity(player1Ghost);
+    applyOpacity(player2Ghost);
     player1Ghost->setVisible(false);
     player2Ghost->setVisible(false);
 
@@ -39,6 +39,21 @@ bool EchoGhost::attach(cocos2d::CCNode* parent, int zOrder) {
     m_player2Ghost = player2Ghost;
     resetVisualCaches();
     return true;
+}
+
+void EchoGhost::detach() {
+    stop();
+
+    if (m_player1Ghost) {
+        m_player1Ghost->removeFromParentAndCleanup(true);
+        m_player1Ghost = nullptr;
+    }
+    if (m_player2Ghost) {
+        m_player2Ghost->removeFromParentAndCleanup(true);
+        m_player2Ghost = nullptr;
+    }
+
+    resetVisualCaches();
 }
 
 void EchoGhost::play(AttemptRecord const* attempt) {
@@ -123,6 +138,12 @@ void EchoGhost::hide() {
     }
 }
 
+void EchoGhost::setOpacity(std::uint8_t opacity) {
+    m_opacity = opacity;
+    applyOpacity(m_player1Ghost);
+    applyOpacity(m_player2Ghost);
+}
+
 bool EchoGhost::isAttached() const {
     return m_player1Ghost != nullptr && m_player2Ghost != nullptr;
 }
@@ -133,6 +154,10 @@ bool EchoGhost::isPlaying() const {
 
 std::uint64_t EchoGhost::sourceAttemptId() const {
     return m_sourceAttemptId;
+}
+
+std::uint8_t EchoGhost::opacity() const {
+    return m_opacity;
 }
 
 void EchoGhost::seekFrameCursor(double timeSeconds) {
@@ -242,7 +267,7 @@ void EchoGhost::applySnapshot(
     ghost->setRotation(snapshot.rotation);
     ghost->setScaleX(snapshot.scaleX);
     ghost->setScaleY(snapshot.scaleY);
-    ghost->setOpacity(kGhostOpacity);
+    applyOpacity(ghost);
     ghost->setVisible(true);
 }
 
@@ -266,7 +291,7 @@ void EchoGhost::applyMode(SimplePlayer* ghost, PlayerMode mode, VisualCache& cac
     }
 
     ghost->updatePlayerFrame(iconId, iconType);
-    ghost->setOpacity(kGhostOpacity);
+    applyOpacity(ghost);
 
     cache.mode = mode;
     cache.modeInitialized = true;
@@ -294,11 +319,17 @@ void EchoGhost::applyColors(
     cocos2d::ccColor3B const primary {color1.r, color1.g, color1.b};
     cocos2d::ccColor3B const secondary {color2.r, color2.g, color2.b};
     ghost->setColors(primary, secondary);
-    ghost->setOpacity(kGhostOpacity);
+    applyOpacity(ghost);
 
     cache.color1 = color1;
     cache.color2 = color2;
     cache.colorsInitialized = true;
+}
+
+void EchoGhost::applyOpacity(SimplePlayer* ghost) {
+    if (ghost) {
+        ghost->setOpacity(m_opacity);
+    }
 }
 
 void EchoGhost::loadIconProfile() {
