@@ -15,10 +15,7 @@ constexpr float kTeleportSpeedFloor = 3000.0f;
 constexpr float kScaleDiscontinuity = 0.35f;
 
 PlayerMode detectPlayerMode(PlayerObject const* player) {
-    if (!player) {
-        return PlayerMode::Cube;
-    }
-
+    if (!player) return PlayerMode::Cube;
     if (player->m_isShip) return PlayerMode::Ship;
     if (player->m_isBall) return PlayerMode::Ball;
     if (player->m_isBird) return PlayerMode::Ufo;
@@ -49,9 +46,7 @@ bool finiteSnapshot(PlayerSnapshot const& snapshot) {
 } // namespace
 
 void EchoRecorder::beginAttempt() {
-    if (hasActiveAttempt()) {
-        return;
-    }
+    if (hasActiveAttempt()) return;
 
     AttemptRecord attempt;
     attempt.attemptId = m_nextAttemptId++;
@@ -69,19 +64,11 @@ void EchoRecorder::captureFrame(
     PlayerObject* player1,
     PlayerObject* player2
 ) {
-    if (!hasActiveAttempt()) {
-        beginAttempt();
-    }
-
     auto* attempt = mutableActiveAttempt();
-    if (!attempt) {
-        return;
-    }
+    if (!attempt) return;
 
     float safeDt = 0.0f;
-    if (std::isfinite(dt)) {
-        safeDt = std::clamp(dt, 0.0f, 0.25f);
-    }
+    if (std::isfinite(dt)) safeDt = std::clamp(dt, 0.0f, 0.25f);
     m_activeElapsedSeconds += static_cast<double>(safeDt);
 
     float safeProgress = 0.0f;
@@ -126,9 +113,7 @@ void EchoRecorder::captureFrame(
 
 void EchoRecorder::finalizeAttempt(AttemptEndReason reason) {
     auto* attempt = mutableActiveAttempt();
-    if (!attempt) {
-        return;
-    }
+    if (!attempt) return;
 
     attempt->durationSeconds = m_activeElapsedSeconds;
     attempt->endReason = reason;
@@ -160,17 +145,13 @@ double EchoRecorder::activeElapsedSeconds() const {
 }
 
 AttemptRecord const* EchoRecorder::activeAttempt() const {
-    if (!hasActiveAttempt()) {
-        return nullptr;
-    }
+    if (!hasActiveAttempt()) return nullptr;
     return &m_attempts.back();
 }
 
 AttemptRecord const* EchoRecorder::latestFinalizedAttempt() const {
     for (auto it = m_attempts.rbegin(); it != m_attempts.rend(); ++it) {
-        if (it->finalized) {
-            return &*it;
-        }
+        if (it->finalized) return &*it;
     }
     return nullptr;
 }
@@ -195,57 +176,39 @@ bool EchoRecorder::canInterpolate(
     PlayerSnapshot const& current,
     double deltaSeconds
 ) {
-    if (!previous.present || !current.present) {
-        return false;
-    }
-    if (!previous.visible || !current.visible) {
-        return false;
-    }
-    if (previous.mode != current.mode) {
-        return false;
-    }
-    if (!finiteSnapshot(previous) || !finiteSnapshot(current)) {
-        return false;
-    }
+    if (!previous.present || !current.present) return false;
+    if (!previous.visible || !current.visible) return false;
+    if (previous.mode != current.mode) return false;
+    if (!finiteSnapshot(previous) || !finiteSnapshot(current)) return false;
     if (
         !std::isfinite(deltaSeconds) ||
         deltaSeconds <= 0.0 ||
         deltaSeconds > kMaxContinuousSampleGapSeconds
-    ) {
-        return false;
-    }
+    ) return false;
 
     float const dx = current.x - previous.x;
     float const dy = current.y - previous.y;
     float const distance = std::hypot(dx, dy);
     float const speed = distance / static_cast<float>(deltaSeconds);
 
-    if (distance > kTeleportDistanceFloor && speed > kTeleportSpeedFloor) {
-        return false;
-    }
+    if (distance > kTeleportDistanceFloor && speed > kTeleportSpeedFloor) return false;
 
     if (
         std::abs(current.scaleX - previous.scaleX) > kScaleDiscontinuity ||
         std::abs(current.scaleY - previous.scaleY) > kScaleDiscontinuity
-    ) {
-        return false;
-    }
+    ) return false;
 
     return true;
 }
 
 AttemptRecord* EchoRecorder::mutableActiveAttempt() {
-    if (!hasActiveAttempt()) {
-        return nullptr;
-    }
+    if (!hasActiveAttempt()) return nullptr;
     return &m_attempts.back();
 }
 
 PlayerSnapshot EchoRecorder::snapshotPlayer(PlayerObject* player) const {
     PlayerSnapshot snapshot;
-    if (!player) {
-        return snapshot;
-    }
+    if (!player) return snapshot;
 
     auto const position = player->getPosition();
     snapshot.present = true;
@@ -267,9 +230,7 @@ void EchoRecorder::trimRetention() {
         !m_attempts.empty()
     ) {
         auto const& oldest = m_attempts.front();
-        if (!oldest.finalized) {
-            break;
-        }
+        if (!oldest.finalized) break;
 
         if (oldest.frames.size() <= m_retainedFrames) {
             m_retainedFrames -= oldest.frames.size();
