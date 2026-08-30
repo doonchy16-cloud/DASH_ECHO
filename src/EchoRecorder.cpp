@@ -7,6 +7,48 @@
 
 namespace dash_echo {
 
+namespace {
+
+PlayerMode detectPlayerMode(PlayerObject const* player) {
+    if (!player) {
+        return PlayerMode::Cube;
+    }
+
+    if (player->m_isShip) {
+        return PlayerMode::Ship;
+    }
+    if (player->m_isBall) {
+        return PlayerMode::Ball;
+    }
+    if (player->m_isBird) {
+        return PlayerMode::Ufo;
+    }
+    if (player->m_isDart) {
+        return PlayerMode::Wave;
+    }
+    if (player->m_isRobot) {
+        return PlayerMode::Robot;
+    }
+    if (player->m_isSpider) {
+        return PlayerMode::Spider;
+    }
+    if (player->m_isSwing) {
+        return PlayerMode::Swing;
+    }
+
+    return PlayerMode::Cube;
+}
+
+ColorRGB toColorRGB(cocos2d::ccColor3B const& color) {
+    return ColorRGB {
+        static_cast<std::uint8_t>(color.r),
+        static_cast<std::uint8_t>(color.g),
+        static_cast<std::uint8_t>(color.b)
+    };
+}
+
+} // namespace
+
 void EchoRecorder::beginAttempt() {
     if (hasActiveAttempt()) {
         return;
@@ -146,6 +188,9 @@ PlayerSnapshot EchoRecorder::snapshotPlayer(PlayerObject* player) const {
     auto const position = player->getPosition();
     snapshot.present = true;
     snapshot.visible = player->isVisible();
+    snapshot.mode = detectPlayerMode(player);
+    snapshot.color1 = toColorRGB(player->m_playerColor1);
+    snapshot.color2 = toColorRGB(player->m_playerColor2);
     snapshot.x = position.x;
     snapshot.y = position.y;
     snapshot.rotation = player->getRotation();
