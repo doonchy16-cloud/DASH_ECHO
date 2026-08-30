@@ -51,8 +51,36 @@ jobs:
           git clone --depth 1 --branch v5.10.1 https://github.com/geode-sdk/geode.git $sdk
           "GEODE_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $env:GEODE_SDK = $sdk
+
+          # CLI 3.7.4 asserts that at least one Geode profile exists even when
+          # install-binaries is given an explicit platform. Create an isolated
+          # CI-only profile; it is never used to launch or modify Geometry Dash.
+          $profileDir = Join-Path $env:RUNNER_TEMP 'dash-echo-ci-profile'
+          New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+          $dummyGd = Join-Path $profileDir 'GeometryDash.exe'
+          New-Item -ItemType File -Path $dummyGd -Force | Out-Null
+
+          $geodeRoot = Join-Path $env:LOCALAPPDATA 'Geode'
+          New-Item -ItemType Directory -Path $geodeRoot -Force | Out-Null
+          $config = [ordered]@{
+            'current-profile' = 'ci'
+            'profiles' = @(
+              [ordered]@{
+                'name' = 'ci'
+                'gd-path' = $dummyGd
+                'platform' = 'win'
+              }
+            )
+            'default-developer' = $null
+            'sdk-nightly' = $false
+            'sdk-version' = '5.10.1'
+            'index-token' = $null
+            'index-url' = 'https://api.geode-sdk.org'
+          }
+          $config | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $geodeRoot 'config.json') -Encoding utf8
+
           geode sdk version
-          geode sdk install-binaries
+          geode sdk install-binaries --platform win --version 5.10.1
 
       - name: Build Windows Release package
         shell: pwsh
