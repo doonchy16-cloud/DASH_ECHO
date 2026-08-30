@@ -156,6 +156,20 @@ AttemptRecord const* EchoRecorder::latestFinalizedAttempt() const {
     return nullptr;
 }
 
+AttemptRecord const* EchoRecorder::personalBestAttempt() const {
+    AttemptRecord const* best = nullptr;
+
+    for (auto const& attempt : m_attempts) {
+        if (!attempt.finalized || attempt.frames.empty()) continue;
+
+        if (!best || isBetterPersonalBest(attempt, *best)) {
+            best = &attempt;
+        }
+    }
+
+    return best;
+}
+
 std::deque<AttemptRecord> const& EchoRecorder::attempts() const {
     return m_attempts;
 }
@@ -201,6 +215,18 @@ bool EchoRecorder::canInterpolate(
     return true;
 }
 
+bool EchoRecorder::isBetterPersonalBest(
+    AttemptRecord const& candidate,
+    AttemptRecord const& incumbent
+) {
+    if (candidate.maxProgressPercent > incumbent.maxProgressPercent) return true;
+    if (candidate.maxProgressPercent < incumbent.maxProgressPercent) return false;
+
+    // Equal-progress ties deliberately prefer the newer attempt. This keeps the
+    // pinned PB fresh and lets an older tied attempt age out normally.
+    return candidate.attemptId > incumbent.attemptId;
+}
+
 AttemptRecord* EchoRecorder::mutableActiveAttempt() {
     if (!hasActiveAttempt()) return nullptr;
     return &m_attempts.back();
@@ -229,15 +255,26 @@ void EchoRecorder::trimRetention() {
         (m_attempts.size() > kMaxRetainedAttempts || m_retainedFrames > kMaxRetainedFrames) &&
         !m_attempts.empty()
     ) {
-        auto const& oldest = m_attempts.front();
-        if (!oldest.finalized) break;
+        auto const* personalBest = personalBestAttempt();
+        auto eviction = m_attempts.end();
 
-        if (oldest.frames.size() <= m_retainedFrames) {
-            m_retainedFrames -= oldest.frames.size();
+        for (auto it = m_attempts.begin(); it != m_attempts.end(); ++it) {
+            if (!it->finalized) continue;
+            if (personalBest && &*it == personalBest) continue;
+            eviction = it;
+            break;
+        }
+
+        // With one pinned PB plus an active attempt, per-attempt frame caps make
+        // this normally unreachable. Breaking is safer than evicting authority.
+        if (eviction == m_attempts.end()) break;
+
+        if (eviction->frames.size() <= m_retainedFrames) {
+            m_retainedFrames -= eviction->frames.size();
         } else {
             m_retainedFrames = 0;
         }
-        m_attempts.pop_front();
+        m_attempts.erase(eviction);
     }
 }
 
