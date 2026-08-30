@@ -70,13 +70,17 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
     void applyReplayViewport() {
         if (!m_fields->replayStudioOpen || !this->m_objectLayer) return;
 
-        auto const camera = m_fields->replay.timeline().cameraAtCursor();
-        if (!camera.present) return;
+        auto const winSize = CCDirector::sharedDirector()->getWinSize();
+        auto const pose = m_fields->replay.cameraPose(
+            winSize.width,
+            winSize.height
+        );
+        if (!pose.valid) return;
 
-        this->m_objectLayer->setPosition({ camera.x, camera.y });
-        this->m_objectLayer->setRotation(camera.rotation);
-        this->m_objectLayer->setScaleX(camera.scaleX);
-        this->m_objectLayer->setScaleY(camera.scaleY);
+        this->m_objectLayer->setPosition({ pose.x, pose.y });
+        this->m_objectLayer->setRotation(pose.rotation);
+        this->m_objectLayer->setScaleX(pose.scaleX);
+        this->m_objectLayer->setScaleY(pose.scaleY);
     }
 
     void restoreActiveViewportAfterStudio() {
@@ -102,17 +106,12 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
                 m_fields->replayStudioOpen = open;
 
                 if (open) {
-                    // Save the active-attempt viewport before Replay Studio takes
-                    // visual camera authority, then reproduce the recorded replay
-                    // viewport at the exact same timeline cursor as the ghost.
                     captureActiveViewportForStudio();
                     m_fields->fleet.hide();
                     applyReplayViewport();
                     return;
                 }
 
-                // Closing Studio restores the exact active-attempt viewport and
-                // returns visual authority to the historical multighost fleet.
                 restoreActiveViewportAfterStudio();
                 if (m_fields->recorder.hasActiveAttempt()) {
                     m_fields->fleet.synchronize(
@@ -123,7 +122,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         );
 
         if (!controls) {
-            log::warn("DASH ECHO v0.8 could not create Replay Studio controls");
+            log::warn("DASH ECHO v0.9 could not create Replay Studio controls");
             return;
         }
 
@@ -163,7 +162,7 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const* finalized = recorder.attemptById(attemptId);
         if (!finalized || !finalized->finalized) {
             log::warn(
-                "DASH ECHO v0.8 could not resolve finalized attempt {} for history",
+                "DASH ECHO v0.9 could not resolve finalized attempt {} for history",
                 attemptId
             );
             return false;
@@ -182,8 +181,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         );
         if (!committed) return false;
 
-        // The newest completed history entry becomes the prepared Replay Studio
-        // candidate. load() copies the frames and summary into owned replay data.
         if (auto const* entry = history.entryForAttempt(attemptId)) {
             replay.load(*finalized, *entry);
             if (m_fields->replayControls) {
@@ -194,9 +191,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
     }
 
     void postUpdate(float dt) {
-        // v0.8 Studio mode deliberately bypasses normal PlayLayer::postUpdate.
-        // This freezes DASH ECHO active-attempt recording time while replay time
-        // advances independently inside the owned historical ReplayClip.
         if (m_fields->replayStudioOpen) {
             m_fields->replay.advance(dt);
             applyReplayViewport();
@@ -295,9 +289,6 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
             }
         }
 
-        // Geometry Dash remains death/physics authority even if Studio isolation
-        // proves incomplete at runtime. DASH ECHO merely refuses to contaminate
-        // analytics with any death callback that occurred during replay review.
         PlayLayer::destroyPlayer(player, object);
 
         if (
@@ -363,13 +354,14 @@ class $modify(DashEchoPlayLayer, PlayLayer) {
         auto const deathStats = deaths.stats();
         auto const historyStats = history.stats();
         log::debug(
-            "DASH ECHO v0.8 session closed: {} attempts started, {} finalized, {} history retained / {} committed, replay candidate {}, replay rate {:.2f}x, {} deaths, {} completions, PB {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} dropped, ghost limit {}, {} clusters",
+            "DASH ECHO v0.9 session closed: {} attempts started, {} finalized, {} history retained / {} committed, replay candidate {}, replay rate {:.2f}x, camera {}, {} deaths, {} completions, PB {}, best {:.2f}%, longest {:.3f}s, {} frames retained, {} dropped, ghost limit {}, {} clusters",
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
             historyStats.retainedEntries,
             historyStats.totalCommittedAttempts,
             replay.timeline().sourceAttemptId(),
             replay.timeline().playbackRate(),
+            replay.cameraModeName(),
             historyStats.totalDeaths,
             historyStats.totalCompletions,
             historyStats.currentPersonalBestAttemptId,
