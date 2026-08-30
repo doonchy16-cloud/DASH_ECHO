@@ -15,6 +15,10 @@ void EchoReplaySession::detach() {
     m_ghost.detach();
 }
 
+void EchoReplaySession::setArchive(EchoReplayArchive const* archive) {
+    m_archive = archive;
+}
+
 bool EchoReplaySession::load(
     AttemptRecord const& attempt,
     AttemptHistoryEntry const& history
@@ -22,18 +26,56 @@ bool EchoReplaySession::load(
     m_ghost.stop();
     m_camera.reset();
 
-    if (!m_timeline.load(attempt, history)) {
-        return false;
-    }
+    if (!m_timeline.load(attempt, history)) return false;
 
+    applyDefaultsAfterLoad();
     bindGhostToOwnedClip();
     m_ghost.hide();
     return true;
 }
 
+bool EchoReplaySession::loadReplayFromArchive(std::uint64_t attemptId) {
+    if (!m_archive || attemptId == 0) return false;
+    auto const* replay = m_archive->replayById(attemptId);
+    auto const* summary = m_archive->summaryById(attemptId);
+    return replay && summary && load(*replay, *summary);
+}
+
+bool EchoReplaySession::loadLatestFromArchive() {
+    if (!m_archive) return false;
+    auto const* replay = m_archive->latestReplay();
+    return replay && loadReplayFromArchive(replay->attemptId);
+}
+
+bool EchoReplaySession::selectPreviousArchivedReplay() {
+    if (!m_archive || !isLoaded()) return false;
+    auto const id = m_archive->previousReplayId(m_timeline.sourceAttemptId());
+    return id != 0 && loadReplayFromArchive(id);
+}
+
+bool EchoReplaySession::selectNextArchivedReplay() {
+    if (!m_archive || !isLoaded()) return false;
+    auto const id = m_archive->nextReplayId(m_timeline.sourceAttemptId());
+    return id != 0 && loadReplayFromArchive(id);
+}
+
+void EchoReplaySession::setDefaultPlaybackRate(float rate) {
+    // Timeline itself validates canonical rates. Use a temporary loaded-state
+    // independent switch here so invalid settings never poison future loads.
+    if (
+        rate == 0.10f || rate == 0.25f || rate == 0.50f ||
+        rate == 1.00f || rate == 2.00f
+    ) {
+        m_defaultPlaybackRate = rate;
+    }
+}
+
+void EchoReplaySession::setDefaultCameraMode(CinematicCameraMode mode) {
+    m_defaultCameraMode = mode;
+}
+
 void EchoReplaySession::start() {
     if (!m_timeline.isLoaded()) return;
-
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.start();
     synchronizeGhost();
@@ -47,7 +89,6 @@ void EchoReplaySession::pause() {
 
 void EchoReplaySession::resume() {
     if (!m_timeline.isLoaded()) return;
-
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.resume();
     synchronizeGhost();
@@ -55,7 +96,6 @@ void EchoReplaySession::resume() {
 
 void EchoReplaySession::togglePlayback() {
     if (!m_timeline.isLoaded()) return;
-
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.togglePlayback();
     synchronizeGhost();
@@ -63,14 +103,12 @@ void EchoReplaySession::togglePlayback() {
 
 void EchoReplaySession::advance(float dt) {
     if (!m_timeline.isPlaying()) return;
-
     m_timeline.advance(dt);
     synchronizeGhost();
 }
 
 void EchoReplaySession::restart() {
     if (!m_timeline.isLoaded()) return;
-
     m_timeline.restart();
     resetCinematicContinuity();
     bindGhostToOwnedClip();
@@ -78,9 +116,7 @@ void EchoReplaySession::restart() {
 }
 
 void EchoReplaySession::stop() {
-    if (m_timeline.isLoaded()) {
-        m_timeline.restart();
-    }
+    if (m_timeline.isLoaded()) m_timeline.restart();
     resetCinematicContinuity();
     m_ghost.stop();
 }
@@ -105,7 +141,6 @@ void EchoReplaySession::cyclePlaybackRate() {
 
 bool EchoReplaySession::seekSeconds(double timeSeconds) {
     if (!m_timeline.seekSeconds(timeSeconds)) return false;
-
     resetCinematicContinuity();
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
@@ -114,7 +149,6 @@ bool EchoReplaySession::seekSeconds(double timeSeconds) {
 
 bool EchoReplaySession::seekNormalized(float normalizedPosition) {
     if (!m_timeline.seekNormalized(normalizedPosition)) return false;
-
     resetCinematicContinuity();
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
@@ -123,7 +157,6 @@ bool EchoReplaySession::seekNormalized(float normalizedPosition) {
 
 bool EchoReplaySession::stepPreviousFrame() {
     if (!m_timeline.stepPreviousFrame()) return false;
-
     resetCinematicContinuity();
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
@@ -132,7 +165,6 @@ bool EchoReplaySession::stepPreviousFrame() {
 
 bool EchoReplaySession::stepNextFrame() {
     if (!m_timeline.stepNextFrame()) return false;
-
     resetCinematicContinuity();
     if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
@@ -141,7 +173,6 @@ bool EchoReplaySession::stepNextFrame() {
 
 void EchoReplaySession::cycleCameraMode() {
     if (!m_timeline.isLoaded()) return;
-
     auto const* history = m_timeline.historyEntry();
     bool const deathAvailable = history && history->death.present;
     m_camera.cycleMode(deathAvailable);
@@ -159,10 +190,7 @@ char const* EchoReplaySession::cameraModeName() const {
     return EchoCinematicCamera::modeName(m_camera.mode());
 }
 
-CameraPose EchoReplaySession::cameraPose(
-    float viewportWidth,
-    float viewportHeight
-) {
+CameraPose EchoReplaySession::cameraPose(float viewportWidth, float viewportHeight) {
     return m_camera.evaluate(m_timeline, viewportWidth, viewportHeight);
 }
 
@@ -192,8 +220,8 @@ void EchoReplaySession::bindGhostToOwnedClip() {
         m_ghost.stop();
         return;
     }
-
     m_ghost.setOpacity(kReplayOpacity);
+    m_ghost.setAuraStyle({});
     m_ghost.play(attempt);
 }
 
@@ -204,6 +232,17 @@ void EchoReplaySession::synchronizeGhost() {
 
 void EchoReplaySession::resetCinematicContinuity() {
     m_camera.resetSmoothing();
+}
+
+void EchoReplaySession::applyDefaultsAfterLoad() {
+    m_timeline.setPlaybackRate(m_defaultPlaybackRate);
+    auto const* history = m_timeline.historyEntry();
+    bool const deathAvailable = history && history->death.present;
+    if (m_defaultCameraMode == CinematicCameraMode::DeathCam && !deathAvailable) {
+        m_camera.setMode(CinematicCameraMode::Recorded);
+    } else {
+        m_camera.setMode(m_defaultCameraMode);
+    }
 }
 
 } // namespace dash_echo
