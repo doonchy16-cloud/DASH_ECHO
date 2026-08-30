@@ -2,7 +2,7 @@
 
 **Every attempt leaves a trace.**
 
-DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, death intelligence, and cinematic replay tools.
+DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchronized ghost replays, attempt history, death intelligence, and cinematic replay tools.
 
 ## Project authority
 
@@ -15,12 +15,12 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - Tooling: **Geode CLI 3.7.4**
 - Current Windows SDK/loader baseline: **Geode v5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
-- Current mod version: **v0.5.0**
-- Current milestone: **Death Intelligence / Heatmap Foundation**
+- Current mod version: **v0.6.0**
+- Current milestone: **Attempt History Authority**
 
 > Note: `3.7.4` is the Geode CLI version. The Geode loader/SDK has its own 5.x version line.
 
-## Implemented through v0.5
+## Implemented through v0.6
 
 ### v0.1 — Recorder Foundation
 
@@ -55,28 +55,33 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 - at most 12 ghost player nodes in dual mode
 - Geode `Ghost Count` setting: 0–6, default 4
 - newest-attempt selection with personal-best preservation
-- recorder-owned personal-best identity and PB-pinned retention
+- recorder-owned PB identity and PB-pinned replay retention
 - age-based ghost opacity with stronger PB visibility
-- deterministic oldest-to-newest layering below the live player
+- deterministic layering below the live player
 - every ghost shares the recorder's authoritative clock and v0.3 synchronization engine
 - fleet historical pointers released before recorder retention can evict attempts
-- out-of-range playback hides rather than discards source history, preserving later backward-seek capability
 
 ### v0.5 — Death Intelligence / Heatmap Foundation
 
-- verified `PlayLayer::destroyPlayer` observation path
-- records only after Geometry Dash confirms the player is actually dead
-- one authoritative terminal death event per attempt
-- player index, attempt ID, attempt-relative time, progress, world position, and optional hazard object context
+- observes `PlayLayer::destroyPlayer` and records only confirmed deaths
+- one terminal death event per attempt
 - recent raw death-event retention capped at 4,096
-- lifetime-session aggregate death intelligence updates incrementally without full-history rebuilds
-- bounded maximum of 512 spatial/progress death clusters
-- repeated deaths form weighted world-space centroids and progress ranges
-- 100 fixed progress heatmap buckets (1% each) with normalized intensity
-- clustered world markers with repeat-count labels and intensity scaling
-- marker renderer capped at 24 clusters to bound visual cost
-- Geode `Death Markers` setting hides presentation without disabling analytics
-- cluster-cap saturation is reported as unclustered deaths instead of corrupting cluster meaning
+- lifetime-session incremental death clustering and 100-bucket progress heatmap
+- bounded 512-cluster aggregate authority
+- clustered in-level markers capped at 24 visuals
+- Death Markers setting hides presentation without disabling analytics
+
+### v0.6 — Attempt History Authority
+
+- immutable finalized-attempt summaries independent of replay-frame retention
+- Death / Reset / Completed / LayerExit outcome distinction
+- max progress, duration, frame count, per-attempt dropped frames, first/last sample times
+- copied death/hazard context with no retained death pointers
+- PB-at-finalization, prior PB progress, and positive improvement tracking
+- dynamic replay-source resolution by immutable attempt ID instead of stale replay booleans
+- bounded 4,096-entry history with current-PB history pinning
+- aggregate counters survive old history-detail eviction
+- one centralized PlayLayer finalization/commit path for reset, completion, and exit
 
 ## Roadmap
 
@@ -86,8 +91,8 @@ DASH ECHO is a Geometry Dash / Geode mod focused on attempt recording, synchroni
 | v0.2 | Previous-attempt ghost |
 | v0.3 | Ghost synchronization + interpolation |
 | v0.4 | Multiple ghosts / Multiverse fleet |
-| **v0.5** | **Death markers / heatmap foundation — source implemented** |
-| v0.6 | Attempt history |
+| v0.5 | Death markers / heatmap foundation |
+| **v0.6** | **Attempt history authority — source implemented** |
 | v0.7 | Replay timeline |
 | v0.8 | Playback speed / scrubbing |
 | v0.9 | Cinematic camera |
