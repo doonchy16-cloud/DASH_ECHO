@@ -20,6 +20,8 @@ bool EchoReplaySession::load(
     AttemptHistoryEntry const& history
 ) {
     m_ghost.stop();
+    m_camera.reset();
+
     if (!m_timeline.load(attempt, history)) {
         return false;
     }
@@ -32,9 +34,7 @@ bool EchoReplaySession::load(
 void EchoReplaySession::start() {
     if (!m_timeline.isLoaded()) return;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.start();
     synchronizeGhost();
 }
@@ -48,9 +48,7 @@ void EchoReplaySession::pause() {
 void EchoReplaySession::resume() {
     if (!m_timeline.isLoaded()) return;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.resume();
     synchronizeGhost();
 }
@@ -58,9 +56,7 @@ void EchoReplaySession::resume() {
 void EchoReplaySession::togglePlayback() {
     if (!m_timeline.isLoaded()) return;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     m_timeline.togglePlayback();
     synchronizeGhost();
 }
@@ -76,6 +72,7 @@ void EchoReplaySession::restart() {
     if (!m_timeline.isLoaded()) return;
 
     m_timeline.restart();
+    resetCinematicContinuity();
     bindGhostToOwnedClip();
     synchronizeGhost();
 }
@@ -84,12 +81,14 @@ void EchoReplaySession::stop() {
     if (m_timeline.isLoaded()) {
         m_timeline.restart();
     }
+    resetCinematicContinuity();
     m_ghost.stop();
 }
 
 void EchoReplaySession::clear() {
     m_ghost.stop();
     m_timeline.clear();
+    m_camera.reset();
 }
 
 bool EchoReplaySession::setPlaybackRate(float rate) {
@@ -107,9 +106,8 @@ void EchoReplaySession::cyclePlaybackRate() {
 bool EchoReplaySession::seekSeconds(double timeSeconds) {
     if (!m_timeline.seekSeconds(timeSeconds)) return false;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    resetCinematicContinuity();
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
     return true;
 }
@@ -117,9 +115,8 @@ bool EchoReplaySession::seekSeconds(double timeSeconds) {
 bool EchoReplaySession::seekNormalized(float normalizedPosition) {
     if (!m_timeline.seekNormalized(normalizedPosition)) return false;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    resetCinematicContinuity();
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
     return true;
 }
@@ -127,9 +124,8 @@ bool EchoReplaySession::seekNormalized(float normalizedPosition) {
 bool EchoReplaySession::stepPreviousFrame() {
     if (!m_timeline.stepPreviousFrame()) return false;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    resetCinematicContinuity();
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
     return true;
 }
@@ -137,11 +133,37 @@ bool EchoReplaySession::stepPreviousFrame() {
 bool EchoReplaySession::stepNextFrame() {
     if (!m_timeline.stepNextFrame()) return false;
 
-    if (!m_ghost.isPlaying()) {
-        bindGhostToOwnedClip();
-    }
+    resetCinematicContinuity();
+    if (!m_ghost.isPlaying()) bindGhostToOwnedClip();
     synchronizeGhost();
     return true;
+}
+
+void EchoReplaySession::cycleCameraMode() {
+    if (!m_timeline.isLoaded()) return;
+
+    auto const* history = m_timeline.historyEntry();
+    bool const deathAvailable = history && history->death.present;
+    m_camera.cycleMode(deathAvailable);
+}
+
+void EchoReplaySession::resetCameraMode() {
+    m_camera.reset();
+}
+
+CinematicCameraMode EchoReplaySession::cameraMode() const {
+    return m_camera.mode();
+}
+
+char const* EchoReplaySession::cameraModeName() const {
+    return EchoCinematicCamera::modeName(m_camera.mode());
+}
+
+CameraPose EchoReplaySession::cameraPose(
+    float viewportWidth,
+    float viewportHeight
+) {
+    return m_camera.evaluate(m_timeline, viewportWidth, viewportHeight);
 }
 
 bool EchoReplaySession::isAttached() const {
@@ -178,6 +200,10 @@ void EchoReplaySession::bindGhostToOwnedClip() {
 void EchoReplaySession::synchronizeGhost() {
     if (!m_timeline.isLoaded() || !m_ghost.isPlaying()) return;
     m_ghost.synchronize(m_timeline.cursorSeconds());
+}
+
+void EchoReplaySession::resetCinematicContinuity() {
+    m_camera.resetSmoothing();
 }
 
 } // namespace dash_echo
