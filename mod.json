@@ -4,24 +4,268 @@
     "win": "2.2081"
   },
   "id": "doonchy.dash-echo",
-  "name": "DASH ECHO",
-  "version": "v1.0.0",
+  "name": "ECHO_DASH",
+  "version": "v1.1.0",
   "developer": "Doonchy",
-  "description": "Every attempt leaves a trace. Multighost replay, death intelligence, Replay Studio, playback analysis, and cinematic cameras for Geometry Dash.",
+  "description": "Every attempt leaves a trace. Scalable multighost replay, persistent history, death intelligence, Replay Studio, and cinematic analysis for Geometry Dash.",
+  "tags": ["gameplay", "interface", "customization", "utility"],
   "settings": {
+    "ghosts-title": {
+      "type": "title",
+      "name": "Ghost Multiverse"
+    },
     "ghost-count": {
       "type": "int",
       "name": "Ghost Count",
-      "description": "How many historical attempts DASH ECHO should render at once. 0 disables ghost rendering; maximum 6.",
-      "default": 4,
+      "description": "How many replay-capable historical attempts ECHO_DASH should select at once. 0 disables ghost rendering; v1.1 supports up to 256.",
+      "default": 16,
       "min": 0,
-      "max": 6
+      "max": 256
+    },
+    "visual-profile": {
+      "type": "string",
+      "name": "Visual Profile",
+      "description": "A starting behavior profile. Custom exposes the raw configured ghost count without profile caps.",
+      "default": "Multiverse",
+      "one-of": ["Clean", "Competitive", "Multiverse", "Chaos", "Custom"]
+    },
+    "older-opacity-min": {
+      "type": "int",
+      "name": "Oldest Ghost Opacity",
+      "default": 36,
+      "min": 0,
+      "max": 255
+    },
+    "older-opacity-max": {
+      "type": "int",
+      "name": "Newest Older-Ghost Opacity",
+      "default": 104,
+      "min": 0,
+      "max": 255
+    },
+    "age-fade-strength": {
+      "type": "float",
+      "name": "Age Fade Strength",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 2.0
+    },
+    "priority-xray": {
+      "type": "bool",
+      "name": "Priority Ghost X-Ray",
+      "description": "Keep Last Attempt / Best Recorded visual accents above busy level decoration where possible.",
+      "default": true
+    },
+
+    "last-title": {
+      "type": "title",
+      "name": "Last Attempt"
+    },
+    "last-ghost-enabled": {
+      "type": "bool",
+      "name": "Show Last Attempt Priority",
+      "default": true
+    },
+    "last-ghost-color": {
+      "type": "rgb",
+      "name": "Last Attempt Glow Color",
+      "default": "#4aa3ff"
+    },
+    "last-ghost-opacity": {
+      "type": "int",
+      "name": "Last Attempt Opacity",
+      "default": 190,
+      "min": 0,
+      "max": 255
+    },
+    "last-ghost-aura": {
+      "type": "bool",
+      "name": "Last Attempt Blue Aura",
+      "default": true
+    },
+    "last-ghost-aura-size": {
+      "type": "float",
+      "name": "Last Aura Size",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.5
+    },
+    "last-ghost-trail": {
+      "type": "bool",
+      "name": "Last Attempt Trail",
+      "default": true
+    },
+
+    "best-title": {
+      "type": "title",
+      "name": "Best Recorded Echo"
+    },
+    "best-ghost-enabled": {
+      "type": "bool",
+      "name": "Show Best Recorded Priority",
+      "default": true
+    },
+    "best-ghost-color": {
+      "type": "rgb",
+      "name": "Best Recorded Glow Color",
+      "default": "#ffd54a"
+    },
+    "best-ghost-opacity": {
+      "type": "int",
+      "name": "Best Recorded Opacity",
+      "default": 220,
+      "min": 0,
+      "max": 255
+    },
+    "best-ghost-aura": {
+      "type": "bool",
+      "name": "Best Recorded Golden Aura",
+      "default": true
+    },
+    "best-ghost-aura-size": {
+      "type": "float",
+      "name": "Best Aura Size",
+      "default": 1.1,
+      "min": 0.5,
+      "max": 2.5
+    },
+    "best-ghost-trail": {
+      "type": "bool",
+      "name": "Best Recorded Trail",
+      "default": true
+    },
+
+    "trails-title": {
+      "type": "title",
+      "name": "Priority Trails"
+    },
+    "trail-seconds": {
+      "type": "float",
+      "name": "Trail Length (seconds)",
+      "default": 0.55,
+      "min": 0.05,
+      "max": 2.0
+    },
+    "trail-width": {
+      "type": "float",
+      "name": "Trail Width",
+      "default": 1.8,
+      "min": 0.5,
+      "max": 6.0
+    },
+    "trail-opacity": {
+      "type": "int",
+      "name": "Trail Opacity",
+      "default": 170,
+      "min": 0,
+      "max": 255
+    },
+
+    "death-title": {
+      "type": "title",
+      "name": "Death Intelligence"
     },
     "death-markers": {
       "type": "bool",
-      "name": "Death Markers",
-      "description": "Show clustered death-zone markers in the level. Death analytics continue recording when markers are hidden.",
+      "name": "World Death Markers",
+      "description": "Show clustered death zones in world space. Analytics continue recording when hidden.",
       "default": true
+    },
+    "death-marker-scale": {
+      "type": "float",
+      "name": "Death Marker Scale",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0
+    },
+    "death-labels": {
+      "type": "bool",
+      "name": "Death Marker Labels",
+      "default": true
+    },
+    "death-xray": {
+      "type": "bool",
+      "name": "Death Marker X-Ray",
+      "default": true
+    },
+    "heat-strip": {
+      "type": "bool",
+      "name": "Progress Death Heat Strip",
+      "default": true
+    },
+    "heat-strip-opacity": {
+      "type": "int",
+      "name": "Heat Strip Opacity",
+      "default": 170,
+      "min": 0,
+      "max": 255
+    },
+
+    "replay-title": {
+      "type": "title",
+      "name": "Replay Studio"
+    },
+    "launcher-scale": {
+      "type": "float",
+      "name": "ECHO_DASH Launcher Scale",
+      "default": 1.0,
+      "min": 0.6,
+      "max": 1.8
+    },
+    "replay-ready-hint": {
+      "type": "bool",
+      "name": "Show Replay Ready Hint",
+      "default": true
+    },
+    "default-playback-rate": {
+      "type": "string",
+      "name": "Default Playback Speed",
+      "default": "1.00",
+      "one-of": ["0.10", "0.25", "0.50", "1.00", "2.00"]
+    },
+    "default-camera-mode": {
+      "type": "string",
+      "name": "Default Camera",
+      "default": "Recorded",
+      "one-of": ["Recorded", "Follow", "Smooth", "Drone", "Dynamic Zoom", "Death Cam"]
+    },
+
+    "history-title": {
+      "type": "title",
+      "name": "History & Performance"
+    },
+    "recorder-sample-rate": {
+      "type": "int",
+      "name": "Recorder Sample Rate",
+      "description": "Regular replay samples per second. Event samples can still be captured between regular samples.",
+      "default": 120,
+      "min": 30,
+      "max": 240
+    },
+    "replay-retention": {
+      "type": "int",
+      "name": "Replay Archive Attempts",
+      "default": 512,
+      "min": 16,
+      "max": 2048
+    },
+    "disk-budget-mb": {
+      "type": "int",
+      "name": "Archive Disk Budget (MB)",
+      "default": 512,
+      "min": 64,
+      "max": 2048
+    },
+    "rendering-quality": {
+      "type": "string",
+      "name": "Rendering Quality",
+      "default": "Auto",
+      "one-of": ["Auto", "Full", "Balanced", "Performance"]
+    },
+    "diagnostics": {
+      "type": "bool",
+      "name": "Show ECHO_DASH Diagnostics",
+      "default": false
     }
   }
 }
