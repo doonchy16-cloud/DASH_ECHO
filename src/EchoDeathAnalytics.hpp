@@ -42,19 +42,25 @@ struct HeatmapBucket {
 };
 
 struct DeathAnalyticsStats {
+    std::uint64_t totalDeathsRecorded = 0;
     std::size_t retainedDeathEvents = 0;
     std::size_t clusterCount = 0;
     std::size_t hottestClusterDeaths = 0;
     std::size_t hottestHeatmapBucketDeaths = 0;
+    std::uint64_t unclusteredDeaths = 0;
     std::uint64_t revision = 0;
 };
 
 class EchoDeathAnalytics final {
 public:
+    // Recent raw events are bounded independently from long-lived aggregates.
     static constexpr std::size_t kMaxDeathEvents = 4096;
+    static constexpr std::size_t kMaxClusters = 512;
     static constexpr std::size_t kHeatmapBucketCount = 100;
     static constexpr float kClusterRadius = 54.0f;
     static constexpr float kClusterProgressWindow = 1.50f;
+
+    EchoDeathAnalytics();
 
     bool recordDeath(DeathEvent event);
     void clear();
@@ -71,17 +77,20 @@ private:
     static void absorbEvent(DeathCluster& cluster, DeathEvent const& event);
     static void absorbCluster(DeathCluster& target, DeathCluster const& source);
 
-    void trimRetention();
-    void rebuildDerived();
-    void rebuildClusters();
-    void mergeCompatibleClusters();
-    void rebuildHeatmap();
+    void initializeHeatmap();
+    void trimRawEventRetention();
+    void accumulateCluster(DeathEvent const& event);
+    void mergeClusterAt(std::size_t index);
+    void accumulateHeatmap(DeathEvent const& event);
+    void normalizeHeatmap();
 
     std::deque<DeathEvent> m_events;
     std::vector<DeathCluster> m_clusters;
     std::array<HeatmapBucket, kHeatmapBucketCount> m_heatmap {};
     std::uint64_t m_nextEventId = 1;
     std::uint64_t m_lastRecordedAttemptId = 0;
+    std::uint64_t m_totalDeathsRecorded = 0;
+    std::uint64_t m_unclusteredDeaths = 0;
     std::uint64_t m_revision = 0;
 };
 
