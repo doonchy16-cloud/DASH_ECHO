@@ -83,6 +83,7 @@ public:
     [[nodiscard]] double durationSeconds() const;
     [[nodiscard]] float normalizedCursor() const;
     [[nodiscard]] float progressPercentAtCursor() const;
+    [[nodiscard]] CameraSnapshot cameraAtCursor() const;
     [[nodiscard]] float playbackRate() const;
 
 private:
@@ -95,6 +96,7 @@ private:
         double durationSeconds
     );
     static bool samePlaybackRate(float left, float right);
+    static float interpolateRotation(float from, float to, float alpha);
 
     void buildMarkers();
     void setCursorClamped(double timeSeconds);
