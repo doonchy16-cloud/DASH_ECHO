@@ -246,6 +246,63 @@ float EchoReplayTimeline::progressPercentAtCursor() const {
     );
 }
 
+CameraSnapshot EchoReplayTimeline::cameraAtCursor() const {
+    CameraSnapshot empty;
+    if (!isLoaded() || m_clip.attempt.frames.empty()) return empty;
+
+    auto const& frames = m_clip.attempt.frames;
+    if (m_cursorSeconds <= frames.front().timeSeconds) {
+        return frames.front().camera;
+    }
+    if (m_cursorSeconds >= frames.back().timeSeconds) {
+        return frames.back().camera;
+    }
+
+    auto upper = std::upper_bound(
+        frames.begin(),
+        frames.end(),
+        m_cursorSeconds,
+        [](double value, FrameRecord const& frame) {
+            return value < frame.timeSeconds;
+        }
+    );
+
+    if (upper == frames.begin()) return frames.front().camera;
+
+    auto const& to = *upper;
+    auto const& from = *(upper - 1);
+    if (!from.camera.present) return from.camera;
+    if (!to.camera.present) return from.camera;
+
+    double const span = to.timeSeconds - from.timeSeconds;
+    if (!std::isfinite(span) || span <= 0.0) {
+        return from.camera;
+    }
+
+    float const alpha = static_cast<float>(std::clamp(
+        (m_cursorSeconds - from.timeSeconds) / span,
+        0.0,
+        1.0
+    ));
+
+    if (!to.cameraContinuousFromPrevious) {
+        return from.camera;
+    }
+
+    CameraSnapshot result;
+    result.present = true;
+    result.x = std::lerp(from.camera.x, to.camera.x, alpha);
+    result.y = std::lerp(from.camera.y, to.camera.y, alpha);
+    result.rotation = interpolateRotation(
+        from.camera.rotation,
+        to.camera.rotation,
+        alpha
+    );
+    result.scaleX = std::lerp(from.camera.scaleX, to.camera.scaleX, alpha);
+    result.scaleY = std::lerp(from.camera.scaleY, to.camera.scaleY, alpha);
+    return result;
+}
+
 bool EchoReplayTimeline::validateAttempt(AttemptRecord const& attempt) {
     if (!attempt.finalized || attempt.frames.size() < 2) return false;
 
@@ -285,6 +342,13 @@ ReplayTimelineMarker EchoReplayTimeline::makeMarker(
 
 bool EchoReplayTimeline::samePlaybackRate(float left, float right) {
     return std::abs(left - right) <= 0.0001f;
+}
+
+float EchoReplayTimeline::interpolateRotation(float from, float to, float alpha) {
+    float delta = std::fmod(to - from, 360.0f);
+    if (delta > 180.0f) delta -= 360.0f;
+    if (delta < -180.0f) delta += 360.0f;
+    return from + delta * std::clamp(alpha, 0.0f, 1.0f);
 }
 
 void EchoReplayTimeline::buildMarkers() {
