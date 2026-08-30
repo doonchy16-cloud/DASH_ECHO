@@ -110,37 +110,43 @@ bool EchoReplayControls::init(
     float const centerX = winSize.width * 0.50f;
     makeButton(
         "PLAY",
-        { centerX - 125.0f, 17.0f },
+        { centerX - 145.0f, 17.0f },
         menu_selector(EchoReplayControls::onPlayPause),
         &m_playLabel
     );
     makeButton(
         "RESTART",
-        { centerX - 64.0f, 17.0f },
+        { centerX - 88.0f, 17.0f },
         menu_selector(EchoReplayControls::onRestart),
         nullptr
     );
     makeButton(
         "<",
-        { centerX + 2.0f, 17.0f },
+        { centerX - 22.0f, 17.0f },
         menu_selector(EchoReplayControls::onPreviousFrame),
         nullptr
     );
     makeButton(
         ">",
-        { centerX + 38.0f, 17.0f },
+        { centerX + 14.0f, 17.0f },
         menu_selector(EchoReplayControls::onNextFrame),
         nullptr
     );
     makeButton(
         "1.00x",
-        { centerX + 94.0f, 17.0f },
+        { centerX + 66.0f, 17.0f },
         menu_selector(EchoReplayControls::onSpeed),
         &m_speedLabel
     );
     makeButton(
+        "RECORDED",
+        { centerX + 135.0f, 17.0f },
+        menu_selector(EchoReplayControls::onCamera),
+        &m_cameraLabel
+    );
+    makeButton(
         "X",
-        { winSize.width - 24.0f, 17.0f },
+        { winSize.width - 20.0f, 17.0f },
         menu_selector(EchoReplayControls::onClose),
         nullptr
     );
@@ -194,6 +200,10 @@ void EchoReplayControls::refresh() {
             fmt::format("{:.2f}x", timeline.playbackRate()).c_str()
         );
     }
+    if (m_cameraLabel) {
+        m_cameraLabel->setString(m_session->cameraModeName());
+        m_cameraLabel->limitLabelWidth(64.0f, 0.48f, 0.30f);
+    }
     if (m_slider) {
         m_slider->setValue(timeline.normalizedCursor());
     }
@@ -242,6 +252,12 @@ void EchoReplayControls::onNextFrame(CCObject*) {
 void EchoReplayControls::onSpeed(CCObject*) {
     if (!m_session || !m_session->isLoaded()) return;
     m_session->cyclePlaybackRate();
+    refresh();
+}
+
+void EchoReplayControls::onCamera(CCObject*) {
+    if (!m_session || !m_session->isLoaded()) return;
+    m_session->cycleCameraMode();
     refresh();
 }
 
