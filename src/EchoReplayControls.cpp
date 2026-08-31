@@ -1,6 +1,5 @@
 #include "EchoReplayControls.hpp"
 
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <Geode/binding/SliderThumb.hpp>
@@ -42,109 +41,127 @@ bool EchoReplayControls::init(
     this->setAnchorPoint({0.0f, 0.0f});
     this->setPosition({0.0f, 0.0f});
 
-    auto* launcherMenu = CCMenu::create();
-    launcherMenu->setPosition({0.0f, 0.0f});
-    this->addChild(launcherMenu, 3);
-
-    auto* launcherSprite = ButtonSprite::create("ECHO_DASH");
-    if (!launcherSprite) return false;
-    launcherSprite->setScale(0.62f);
-    m_launcher = CCMenuItemSpriteExtra::create(
-        launcherSprite,
-        this,
-        menu_selector(EchoReplayControls::onOpen)
-    );
-    m_launcher->setPosition({winSize.width - 62.0f, 34.0f});
-    launcherMenu->addChild(m_launcher);
-
-    m_hintLabel = CCLabelBMFont::create("REPLAY READY", "goldFont.fnt");
-    if (m_hintLabel) {
-        m_hintLabel->setScale(0.34f);
-        m_hintLabel->setPosition({winSize.width - 62.0f, 58.0f});
-        this->addChild(m_hintLabel, 3);
-    }
-
+    // v1.1.1 intentionally renders nothing during ordinary gameplay. Replay
+    // Studio is opened from PauseLayer, so the live level stays distraction-free.
     auto* panel = CCLayerColor::create(
-        cocos2d::ccColor4B {0, 0, 0, 190},
+        cocos2d::ccColor4B {8, 10, 18, 226},
         winSize.width,
-        108.0f
+        142.0f
     );
     panel->setPosition({0.0f, 0.0f});
     panel->setVisible(false);
     this->addChild(panel, 2);
     m_panel = panel;
 
+    auto* title = CCLabelBMFont::create("ECHO_DASH  |  REPLAY STUDIO", "goldFont.fnt");
+    if (title) {
+        title->setScale(0.43f);
+        title->setAnchorPoint({0.0f, 0.5f});
+        title->setPosition({14.0f, 126.0f});
+        panel->addChild(title);
+    }
+
     m_truthLabel = CCLabelBMFont::create("GD PB -- | BEST ECHO -- | SESSION --", "bigFont.fnt");
-    m_truthLabel->setScale(0.30f);
-    m_truthLabel->setPosition({winSize.width * 0.50f, 94.0f});
-    panel->addChild(m_truthLabel);
+    if (m_truthLabel) {
+        m_truthLabel->setScale(0.29f);
+        m_truthLabel->setPosition({winSize.width * 0.50f, 124.0f});
+        panel->addChild(m_truthLabel);
+    }
 
     m_attemptLabel = CCLabelBMFont::create("Attempt", "goldFont.fnt");
-    m_attemptLabel->setScale(0.40f);
-    m_attemptLabel->setPosition({76.0f, 75.0f});
-    panel->addChild(m_attemptLabel);
+    if (m_attemptLabel) {
+        m_attemptLabel->setScale(0.38f);
+        m_attemptLabel->setAnchorPoint({0.0f, 0.5f});
+        m_attemptLabel->setPosition({14.0f, 100.0f});
+        panel->addChild(m_attemptLabel);
+    }
 
     m_timeLabel = CCLabelBMFont::create("0.00 / 0.00s", "bigFont.fnt");
-    m_timeLabel->setScale(0.32f);
-    m_timeLabel->setPosition({winSize.width * 0.50f, 75.0f});
-    panel->addChild(m_timeLabel);
+    if (m_timeLabel) {
+        m_timeLabel->setScale(0.31f);
+        m_timeLabel->setPosition({winSize.width * 0.50f, 100.0f});
+        panel->addChild(m_timeLabel);
+    }
 
     m_progressLabel = CCLabelBMFont::create("0.00%", "bigFont.fnt");
-    m_progressLabel->setScale(0.32f);
-    m_progressLabel->setPosition({winSize.width - 70.0f, 75.0f});
-    panel->addChild(m_progressLabel);
+    if (m_progressLabel) {
+        m_progressLabel->setScale(0.31f);
+        m_progressLabel->setAnchorPoint({1.0f, 0.5f});
+        m_progressLabel->setPosition({winSize.width - 14.0f, 100.0f});
+        panel->addChild(m_progressLabel);
+    }
 
-    m_slider = Slider::create(this, menu_selector(EchoReplayControls::onScrub), 0.80f);
-    m_slider->setValue(0.0f);
-    m_slider->setPosition({winSize.width * 0.50f, 50.0f});
-    panel->addChild(m_slider);
+    m_slider = Slider::create(this, menu_selector(EchoReplayControls::onScrub), 0.86f);
+    if (m_slider) {
+        m_slider->setValue(0.0f);
+        m_slider->setPosition({winSize.width * 0.50f, 76.0f});
+        panel->addChild(m_slider);
+    }
 
     auto* controlsMenu = CCMenu::create();
+    if (!controlsMenu) return false;
     controlsMenu->setPosition({0.0f, 0.0f});
     panel->addChild(controlsMenu);
 
     auto makeButton = [this, controlsMenu](
         char const* text,
         cocos2d::CCPoint position,
+        float scale,
         cocos2d::SEL_MenuHandler selector,
         cocos2d::CCLabelBMFont** labelOut
     ) {
         auto* label = CCLabelBMFont::create(text, "goldFont.fnt");
-        label->setScale(0.40f);
+        if (!label) return;
+        label->setScale(scale);
         auto* item = CCMenuItemSpriteExtra::create(label, this, selector);
+        if (!item) return;
         item->setPosition(position);
         controlsMenu->addChild(item);
         if (labelOut) *labelOut = label;
     };
 
     float const centerX = winSize.width * 0.50f;
-    makeButton("ATT<", {centerX - 205.0f, 19.0f}, menu_selector(EchoReplayControls::onPreviousAttempt), nullptr);
-    makeButton("ATT>", {centerX - 165.0f, 19.0f}, menu_selector(EchoReplayControls::onNextAttempt), nullptr);
-    makeButton("PLAY", {centerX - 120.0f, 19.0f}, menu_selector(EchoReplayControls::onPlayPause), &m_playLabel);
-    makeButton("RESTART", {centerX - 68.0f, 19.0f}, menu_selector(EchoReplayControls::onRestart), nullptr);
-    makeButton("<", {centerX - 16.0f, 19.0f}, menu_selector(EchoReplayControls::onPreviousFrame), nullptr);
-    makeButton(">", {centerX + 15.0f, 19.0f}, menu_selector(EchoReplayControls::onNextFrame), nullptr);
-    makeButton("1.00x", {centerX + 57.0f, 19.0f}, menu_selector(EchoReplayControls::onSpeed), &m_speedLabel);
-    makeButton("RECORDED", {centerX + 112.0f, 19.0f}, menu_selector(EchoReplayControls::onCamera), &m_cameraLabel);
-    makeButton("SETTINGS", {centerX + 183.0f, 19.0f}, menu_selector(EchoReplayControls::onSettings), nullptr);
-    makeButton("X", {winSize.width - 18.0f, 19.0f}, menu_selector(EchoReplayControls::onClose), nullptr);
+
+    // Row 1: attempt navigation + core transport.
+    makeButton("ATT <", {centerX - 190.0f, 49.0f}, 0.40f,
+        menu_selector(EchoReplayControls::onPreviousAttempt), nullptr);
+    makeButton("ATT >", {centerX - 145.0f, 49.0f}, 0.40f,
+        menu_selector(EchoReplayControls::onNextAttempt), nullptr);
+    makeButton("< FRAME", {centerX - 92.0f, 49.0f}, 0.36f,
+        menu_selector(EchoReplayControls::onPreviousFrame), nullptr);
+    makeButton("PLAY", {centerX - 30.0f, 49.0f}, 0.43f,
+        menu_selector(EchoReplayControls::onPlayPause), &m_playLabel);
+    makeButton("FRAME >", {centerX + 31.0f, 49.0f}, 0.36f,
+        menu_selector(EchoReplayControls::onNextFrame), nullptr);
+    makeButton("RESTART", {centerX + 96.0f, 49.0f}, 0.37f,
+        menu_selector(EchoReplayControls::onRestart), nullptr);
+
+    // Row 2: mode controls and exit actions.
+    makeButton("SPEED 1.00x", {centerX - 126.0f, 20.0f}, 0.35f,
+        menu_selector(EchoReplayControls::onSpeed), &m_speedLabel);
+    makeButton("CAM RECORDED", {centerX - 24.0f, 20.0f}, 0.35f,
+        menu_selector(EchoReplayControls::onCamera), &m_cameraLabel);
+    makeButton("SETTINGS", {centerX + 81.0f, 20.0f}, 0.37f,
+        menu_selector(EchoReplayControls::onSettings), nullptr);
+    makeButton("CLOSE", {centerX + 157.0f, 20.0f}, 0.40f,
+        menu_selector(EchoReplayControls::onClose), nullptr);
 
     refresh();
     return true;
 }
 
+bool EchoReplayControls::openStudio() {
+    if (!m_session || !m_session->isLoaded()) return false;
+    setStudioOpen(true);
+    return m_studioOpen;
+}
+
+void EchoReplayControls::closeStudio() {
+    setStudioOpen(false);
+}
+
 void EchoReplayControls::refresh() {
     bool const loaded = m_session && m_session->isLoaded();
-
-    if (m_launcher) {
-        m_launcher->setVisible(loaded && !m_studioOpen);
-        m_launcher->setScale(m_launcherScale);
-    }
-    if (m_hintLabel) {
-        m_hintLabel->setVisible(
-            loaded && !m_studioOpen && m_replayReadyHintEnabled && !m_hasOpenedStudio
-        );
-    }
     if (m_panel) m_panel->setVisible(loaded && m_studioOpen);
     if (!loaded || !m_studioOpen) return;
 
@@ -170,27 +187,27 @@ void EchoReplayControls::refresh() {
                     m_gdLevelBestPercent, m_bestRecordedPercent, m_sessionBestPercent).c_str()
             );
         }
+        m_truthLabel->limitLabelWidth(260.0f, 0.29f, 0.22f);
     }
     if (m_attemptLabel) {
-        m_attemptLabel->setString(fmt::format("Attempt #{}", timeline.sourceAttemptId()).c_str());
+        m_attemptLabel->setString(fmt::format("ATTEMPT #{}", timeline.sourceAttemptId()).c_str());
     }
     if (m_timeLabel) {
-        m_timeLabel->setString(fmt::format("{:.2f} / {:.2f}s", elapsed, clip->durationSeconds).c_str());
+        m_timeLabel->setString(fmt::format("TIME {:.2f} / {:.2f}s", elapsed, clip->durationSeconds).c_str());
     }
     if (m_progressLabel) {
-        m_progressLabel->setString(fmt::format("{:.2f}%", timeline.progressPercentAtCursor()).c_str());
+        m_progressLabel->setString(fmt::format("PROGRESS {:.2f}%", timeline.progressPercentAtCursor()).c_str());
     }
     if (m_playLabel) m_playLabel->setString(timeline.isPlaying() ? "PAUSE" : "PLAY");
-    if (m_speedLabel) m_speedLabel->setString(fmt::format("{:.2f}x", timeline.playbackRate()).c_str());
+    if (m_speedLabel) {
+        m_speedLabel->setString(fmt::format("SPEED {:.2f}x", timeline.playbackRate()).c_str());
+        m_speedLabel->limitLabelWidth(82.0f, 0.35f, 0.27f);
+    }
     if (m_cameraLabel) {
-        m_cameraLabel->setString(m_session->cameraModeName());
-        m_cameraLabel->limitLabelWidth(60.0f, 0.40f, 0.26f);
+        m_cameraLabel->setString(fmt::format("CAM {}", m_session->cameraModeName()).c_str());
+        m_cameraLabel->limitLabelWidth(92.0f, 0.35f, 0.25f);
     }
     if (m_slider) m_slider->setValue(timeline.normalizedCursor());
-}
-
-void EchoReplayControls::closeStudio() {
-    setStudioOpen(false);
 }
 
 void EchoReplayControls::setProgressContext(
@@ -206,23 +223,12 @@ void EchoReplayControls::setProgressContext(
     refresh();
 }
 
-void EchoReplayControls::setLauncherScale(float scale) {
-    m_launcherScale = std::clamp(scale, 0.6f, 1.8f);
-    refresh();
-}
-
-void EchoReplayControls::setReplayReadyHintEnabled(bool enabled) {
-    m_replayReadyHintEnabled = enabled;
-    refresh();
-}
-
 bool EchoReplayControls::isStudioOpen() const {
     return m_studioOpen;
 }
 
-void EchoReplayControls::onOpen(CCObject*) {
-    m_hasOpenedStudio = true;
-    setStudioOpen(true);
+bool EchoReplayControls::hasReplay() const {
+    return m_session && m_session->isLoaded();
 }
 
 void EchoReplayControls::onClose(CCObject*) {
