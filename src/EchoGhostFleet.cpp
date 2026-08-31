@@ -189,14 +189,18 @@ void EchoGhostFleet::synchronize(
         auto& slot = *m_slots[i];
         double resolvedTime = timeSeconds;
 
-        bool const alignDistinctBest =
+        bool const carriesBestIdentity =
+            slot.role == GhostRole::BestRecorded ||
+            slot.role == GhostRole::LastAndBest;
+
+        bool const alignBestIdentity =
             progressAlignmentEnabled &&
             m_visual.bestEnabled &&
-            slot.role == GhostRole::BestRecorded &&
+            carriesBestIdentity &&
             slot.progressAlignmentSafe &&
             slot.attempt;
 
-        if (alignDistinctBest) {
+        if (alignBestIdentity) {
             resolvedTime = timeForProgress(
                 *slot.attempt,
                 progressPercent,
