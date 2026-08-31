@@ -85,7 +85,7 @@ class EchoDashV111Contract(unittest.TestCase):
         )
         self.assertRegex(
             main,
-            r"if \(m_fields->fleet\.continuationComplete\(\)\)\s*\{\s*performResetLifecycle\(\);",
+            r"if \(\s*m_fields->deferredResetRequested\s*&&\s*m_fields->fleet\.continuationComplete\(\)\s*\)\s*\{\s*performResetLifecycle\(\);",
         )
 
     def test_fleet_is_dynamic_and_supports_256(self):
