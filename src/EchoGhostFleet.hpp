@@ -30,15 +30,11 @@ struct GhostFleetVisualSettings {
     bool lastEnabled = true;
     ColorRGB lastColor {74, 163, 255};
     std::uint8_t lastOpacity = 190;
-    bool lastAura = true;
-    float lastAuraSize = 1.0f;
     bool lastTrail = true;
 
     bool bestEnabled = true;
     ColorRGB bestColor {255, 213, 74};
     std::uint8_t bestOpacity = 220;
-    bool bestAura = true;
-    float bestAuraSize = 1.1f;
     bool bestTrail = true;
 
     float trailSeconds = 0.55f;
