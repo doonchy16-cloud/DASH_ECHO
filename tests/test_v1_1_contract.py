@@ -41,6 +41,25 @@ class EchoDashV111Contract(unittest.TestCase):
         self.assertNotIn("lastAura", fleet_header)
         self.assertNotIn("bestAura", fleet_header)
 
+    def test_best_recorded_echo_has_progress_alignment_path(self):
+        fleet_header = self.read("src/EchoGhostFleet.hpp")
+        fleet_cpp = self.read("src/EchoGhostFleet.cpp")
+        main = self.read("src/main.cpp")
+
+        self.assertRegex(
+            fleet_header,
+            r"void synchronize\(\s*double timeSeconds,\s*float progressPercent,\s*bool progressAlignmentEnabled\s*\)",
+        )
+        self.assertIn("progressAlignmentSafe", fleet_header)
+        self.assertIn("timeForProgress", fleet_header)
+        self.assertIn("GhostRole::BestRecorded", fleet_cpp)
+        self.assertIn("progressAlignmentEnabled", fleet_cpp)
+        self.assertIn("timeForProgress", fleet_cpp)
+        self.assertRegex(
+            main,
+            r"fleet\.synchronize\(\s*m_fields->recorder\.activeElapsedSeconds\(\),\s*this->getCurrentPercent\(\)",
+        )
+
     def test_fleet_is_dynamic_and_supports_256(self):
         header = self.read("src/EchoGhostFleet.hpp")
         self.assertNotIn("std::array<Slot, kMaxGhosts>", header)
