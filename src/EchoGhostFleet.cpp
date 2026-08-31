@@ -33,7 +33,10 @@ bool EchoGhostFleet::attach(cocos2d::CCNode* parent, int topZOrder) {
         m_parent = nullptr;
         return false;
     }
-    parent->addChild(trails, topZOrder - 1);
+    parent->addChild(
+        trails,
+        m_visual.priorityXray ? topZOrder + 2 : topZOrder - 1
+    );
     m_priorityTrailNode = trails;
 
     for (auto& slot : m_slots) {
@@ -68,10 +71,14 @@ void EchoGhostFleet::setGhostLimit(std::size_t ghostLimit) {
 void EchoGhostFleet::setVisualSettings(GhostFleetVisualSettings const& settings) {
     m_visual = settings;
     m_visual.ageFadeStrength = std::clamp(m_visual.ageFadeStrength, 0.0f, 2.0f);
-    m_visual.lastAuraSize = std::clamp(m_visual.lastAuraSize, 0.5f, 2.5f);
-    m_visual.bestAuraSize = std::clamp(m_visual.bestAuraSize, 0.5f, 2.5f);
     m_visual.trailSeconds = std::clamp(m_visual.trailSeconds, 0.05f, 2.0f);
     m_visual.trailWidth = std::clamp(m_visual.trailWidth, 0.5f, 6.0f);
+
+    if (m_priorityTrailNode) {
+        m_priorityTrailNode->setZOrder(
+            m_visual.priorityXray ? m_topZOrder + 2 : m_topZOrder - 1
+        );
+    }
 
     for (std::size_t i = 0; i < m_activeGhosts && i < m_slots.size(); ++i) {
         configureSlot(
@@ -160,7 +167,6 @@ void EchoGhostFleet::rebuild(EchoReplayArchive const& archive) {
 
     for (std::size_t i = m_activeGhosts; i < m_slots.size(); ++i) {
         m_slots[i]->ghost.stop();
-        m_slots[i]->ghost.setAuraStyle({});
         m_slots[i]->attempt = nullptr;
         m_slots[i]->role = GhostRole::Older;
     }
@@ -242,42 +248,6 @@ void EchoGhostFleet::configureSlot(
     else slot.role = GhostRole::Older;
 
     slot.ghost.setOpacity(opacityForRank(rank, count, slot.role));
-
-    GhostAuraStyle aura;
-    switch (slot.role) {
-        case GhostRole::Older:
-            break;
-        case GhostRole::LastAttempt:
-            aura.enabled = m_visual.lastEnabled && m_visual.lastAura;
-            aura.outerColor = m_visual.lastColor;
-            aura.innerColor = m_visual.lastColor;
-            aura.size = m_visual.lastAuraSize;
-            break;
-        case GhostRole::BestRecorded:
-            aura.enabled = m_visual.bestEnabled && m_visual.bestAura;
-            aura.outerColor = m_visual.bestColor;
-            aura.innerColor = m_visual.bestColor;
-            aura.size = m_visual.bestAuraSize;
-            break;
-        case GhostRole::LastAndBest:
-            aura.enabled =
-                (m_visual.lastEnabled && m_visual.lastAura) ||
-                (m_visual.bestEnabled && m_visual.bestAura);
-            if (m_visual.lastEnabled) {
-                aura.outerColor = m_visual.lastColor;
-                aura.size = m_visual.lastAuraSize;
-            } else {
-                aura.outerColor = m_visual.bestColor;
-                aura.size = m_visual.bestAuraSize;
-            }
-            if (m_visual.bestEnabled) {
-                aura.innerColor = m_visual.bestColor;
-                aura.innerAccent = m_visual.lastEnabled;
-                aura.size = std::max(aura.size, m_visual.bestAuraSize);
-            }
-            break;
-    }
-    slot.ghost.setAuraStyle(aura);
 }
 
 void EchoGhostFleet::rebuildPriorityTrails(double timeSeconds) {
@@ -324,7 +294,6 @@ void EchoGhostFleet::drawTrailForSlot(Slot const& slot, double timeSeconds) {
     std::size_t begin = end;
     while (begin > 0 && frames[begin - 1].timeSeconds >= startTime) --begin;
 
-    // Bound trail work even if an archive was captured at an unusually high rate.
     constexpr std::size_t kMaxTrailSegments = 64;
     if (end > begin + kMaxTrailSegments) begin = end - kMaxTrailSegments;
 
@@ -360,6 +329,8 @@ void EchoGhostFleet::drawTrailForSlot(Slot const& slot, double timeSeconds) {
             cocos2d::CCPoint const b {current.x, current.y};
 
             if (slot.role == GhostRole::LastAndBest && drawLast && drawBest) {
+                // Dual-role run: broad blue last-attempt ribbon under a narrower
+                // gold best-run ribbon. No halo/aura is rendered anywhere.
                 m_priorityTrailNode->drawSegment(
                     a, b, m_visual.trailWidth * 1.55f,
                     trailColor(m_visual.lastColor, alpha * 0.58f)
