@@ -67,6 +67,11 @@ public:
     // reacquires stable pointers.
     void rebuild(EchoReplayArchive const& archive);
     void synchronize(double timeSeconds);
+    void synchronize(
+        double timeSeconds,
+        float progressPercent,
+        bool progressAlignmentEnabled
+    );
     void stop();
     void hide();
 
@@ -80,6 +85,8 @@ private:
         EchoGhost ghost;
         AttemptRecord const* attempt = nullptr;
         GhostRole role = GhostRole::Older;
+        bool progressAlignmentSafe = false;
+        double synchronizedTimeSeconds = 0.0;
     };
 
     bool ensurePool(std::size_t count);
@@ -90,8 +97,15 @@ private:
         std::uint64_t latestAttemptId,
         std::uint64_t bestAttemptId
     );
-    void rebuildPriorityTrails(double timeSeconds);
+    void rebuildPriorityTrails();
     void drawTrailForSlot(Slot const& slot, double timeSeconds);
+
+    [[nodiscard]] static bool progressIsMonotonic(AttemptRecord const& attempt);
+    [[nodiscard]] static double timeForProgress(
+        AttemptRecord const& attempt,
+        float progressPercent,
+        double fallbackTimeSeconds
+    );
 
     [[nodiscard]] std::uint8_t opacityForRank(
         std::size_t rank,
