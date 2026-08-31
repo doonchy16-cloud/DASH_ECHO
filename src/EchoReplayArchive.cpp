@@ -9,6 +9,7 @@
 #include <fstream>
 #include <limits>
 #include <system_error>
+#include <unordered_set>
 
 namespace dash_echo {
 
@@ -18,10 +19,14 @@ constexpr std::array<char, 8> kMagic {'E', 'C', 'H', 'O', 'D', 'A', 'S', 'H'};
 constexpr std::uint32_t kMaxStoredStringBytes = 4096;
 constexpr std::size_t kApproxSummaryBytes = 160;
 constexpr std::size_t kApproxFrameBytes = 104;
+constexpr double kMaxStoredDurationSeconds = 10'000'000.0;
+constexpr float kMaxAbsCoordinate = 1'000'000'000.0f;
+constexpr float kMaxAbsRotation = 1'000'000'000.0f;
+constexpr float kMaxAbsScale = 1'000'000.0f;
+constexpr double kDurationSlackSeconds = 2.0;
 
-float safePercent(float value) {
-    if (!std::isfinite(value)) return 0.0f;
-    return std::clamp(value, 0.0f, 100.0f);
+bool finiteBounded(float value, float absoluteLimit) {
+    return std::isfinite(value) && std::abs(value) <= absoluteLimit;
 }
 
 template <class T>
@@ -239,7 +244,6 @@ bool readSummary(std::istream& in, AttemptHistoryEntry& summary) {
     summary.outcome = static_cast<AttemptOutcome>(outcome);
     summary.sourceEndReason = static_cast<AttemptEndReason>(reason);
     summary.capturedFrameCount = static_cast<std::size_t>(captured);
-    summary.maxProgressPercent = safePercent(summary.maxProgressPercent);
     return true;
 }
 
@@ -279,13 +283,12 @@ bool readAttempt(std::istream& in, AttemptRecord& attempt, std::uint64_t& totalF
     ) return false;
 
     attempt.endReason = static_cast<AttemptEndReason>(reason);
-    attempt.maxProgressPercent = safePercent(attempt.maxProgressPercent);
     attempt.frames.resize(static_cast<std::size_t>(frameCount));
     for (auto& frame : attempt.frames) {
         if (!readFrame(in, frame)) return false;
     }
     totalFrames += frameCount;
-    return attempt.attemptId != 0 && attempt.finalized && !attempt.frames.empty();
+    return true;
 }
 
 bool betterProgress(float candidateProgress, std::uint64_t candidateId,
@@ -331,24 +334,134 @@ void EchoReplayArchive::configure(
     if (m_replays.size() != oldReplayCount) markDirty();
 }
 
-bool EchoReplayArchive::load(EchoLevelContext const& context) {
-    m_context = context;
-    m_summaries.clear();
-    m_replays.clear();
-    m_loaded = true;
-    m_dirty = false;
-    ++m_revision;
+bool EchoReplayArchive::validatePlayerSnapshot(PlayerSnapshot const& player) {
+    return
+        finiteBounded(player.x, kMaxAbsCoordinate) &&
+        finiteBounded(player.y, kMaxAbsCoordinate) &&
+        finiteBounded(player.rotation, kMaxAbsRotation) &&
+        finiteBounded(player.scaleX, kMaxAbsScale) &&
+        finiteBounded(player.scaleY, kMaxAbsScale);
+}
 
-    auto const path = archivePath();
+bool EchoReplayArchive::validateCameraSnapshot(CameraSnapshot const& camera) {
+    return
+        finiteBounded(camera.x, kMaxAbsCoordinate) &&
+        finiteBounded(camera.y, kMaxAbsCoordinate) &&
+        finiteBounded(camera.rotation, kMaxAbsRotation) &&
+        finiteBounded(camera.scaleX, kMaxAbsScale) &&
+        finiteBounded(camera.scaleY, kMaxAbsScale);
+}
+
+bool EchoReplayArchive::validateFrame(
+    FrameRecord const& frame,
+    std::uint64_t previousSequence,
+    double previousTime,
+    bool hasPrevious
+) {
+    if (frame.sequence == 0) return false;
+    if (!std::isfinite(frame.timeSeconds) || frame.timeSeconds < 0.0) return false;
+    if (
+        !std::isfinite(frame.progressPercent) ||
+        frame.progressPercent < 0.0f ||
+        frame.progressPercent > 100.0f
+    ) return false;
+    if (hasPrevious && frame.timeSeconds < previousTime) return false;
+    if (hasPrevious && frame.sequence <= previousSequence) return false;
+    if (!validatePlayerSnapshot(frame.player1)) return false;
+    if (!validatePlayerSnapshot(frame.player2)) return false;
+    if (!validateCameraSnapshot(frame.camera)) return false;
+    return true;
+}
+
+bool EchoReplayArchive::validateReplay(AttemptRecord const& attempt) {
+    if (
+        attempt.attemptId == 0 ||
+        !attempt.finalized ||
+        attempt.endReason == AttemptEndReason::Active ||
+        attempt.frames.empty() ||
+        attempt.frames.size() > kHardMaxFramesOnDisk ||
+        !std::isfinite(attempt.durationSeconds) ||
+        attempt.durationSeconds < 0.0 ||
+        attempt.durationSeconds > kMaxStoredDurationSeconds ||
+        !std::isfinite(attempt.maxProgressPercent) ||
+        attempt.maxProgressPercent < 0.0f ||
+        attempt.maxProgressPercent > 100.0f
+    ) return false;
+
+    bool hasPrevious = false;
+    std::uint64_t previousSequence = 0;
+    double previousTime = 0.0;
+    float observedMaxProgress = 0.0f;
+
+    for (auto const& frame : attempt.frames) {
+        if (!validateFrame(frame, previousSequence, previousTime, hasPrevious)) {
+            return false;
+        }
+        hasPrevious = true;
+        previousSequence = frame.sequence;
+        previousTime = frame.timeSeconds;
+        observedMaxProgress = std::max(observedMaxProgress, frame.progressPercent);
+    }
+
+    if (previousTime > attempt.durationSeconds + kDurationSlackSeconds) return false;
+    if (observedMaxProgress > attempt.maxProgressPercent + 0.01f) return false;
+    return true;
+}
+
+bool EchoReplayArchive::validateSummary(AttemptHistoryEntry const& summary) {
+    if (summary.attemptId == 0) return false;
+    if (
+        !std::isfinite(summary.maxProgressPercent) ||
+        summary.maxProgressPercent < 0.0f ||
+        summary.maxProgressPercent > 100.0f ||
+        !std::isfinite(summary.durationSeconds) ||
+        summary.durationSeconds < 0.0 ||
+        summary.durationSeconds > kMaxStoredDurationSeconds ||
+        !std::isfinite(summary.firstCapturedTimeSeconds) ||
+        !std::isfinite(summary.lastCapturedTimeSeconds) ||
+        summary.firstCapturedTimeSeconds < 0.0 ||
+        summary.lastCapturedTimeSeconds < summary.firstCapturedTimeSeconds ||
+        summary.lastCapturedTimeSeconds > summary.durationSeconds + kDurationSlackSeconds ||
+        !std::isfinite(summary.priorBestProgressPercent) ||
+        summary.priorBestProgressPercent < 0.0f ||
+        summary.priorBestProgressPercent > 100.0f ||
+        !std::isfinite(summary.improvementPercent) ||
+        summary.improvementPercent < -100.0f ||
+        summary.improvementPercent > 100.0f
+    ) return false;
+
+    if (summary.death.present) {
+        auto const& death = summary.death;
+        if (
+            (death.playerIndex != 1 && death.playerIndex != 2) ||
+            !std::isfinite(death.timeSeconds) ||
+            death.timeSeconds < 0.0 ||
+            death.timeSeconds > summary.durationSeconds + kDurationSlackSeconds ||
+            !std::isfinite(death.progressPercent) ||
+            death.progressPercent < 0.0f ||
+            death.progressPercent > 100.0f ||
+            !finiteBounded(death.x, kMaxAbsCoordinate) ||
+            !finiteBounded(death.y, kMaxAbsCoordinate) ||
+            !finiteBounded(death.hazardX, kMaxAbsCoordinate) ||
+            !finiteBounded(death.hazardY, kMaxAbsCoordinate)
+        ) return false;
+    }
+
+    return true;
+}
+
+bool EchoReplayArchive::loadCandidate(
+    std::filesystem::path const& path,
+    EchoLevelContext const& context,
+    LoadCandidate& candidate
+) const {
+    candidate = LoadCandidate {};
+
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) return true;
-    if (ec) return false;
+    if (!std::filesystem::exists(path, ec) || ec) return false;
 
     auto const bytes = std::filesystem::file_size(path, ec);
-    if (ec || bytes > kHardMaxArchiveBytes) {
-        geode::log::warn("ECHO_DASH ignored oversized/unreadable archive {}", path.string());
-        return false;
-    }
+    if (ec || bytes > kHardMaxArchiveBytes) return false;
 
     std::ifstream in(path, std::ios::binary);
     if (!in) return false;
@@ -373,42 +486,138 @@ bool EchoReplayArchive::load(EchoLevelContext const& context) {
         !readString(in, stored.levelName) ||
         !readPod(in, summaryCount) || summaryCount > kMaxSummaries ||
         !readPod(in, replayCount) || replayCount > kHardMaxReplays
-    ) {
-        geode::log::warn("ECHO_DASH rejected invalid archive header {}", path.string());
-        return false;
-    }
+    ) return false;
 
     stored.platformer = platformer != 0;
     stored.practice = practice != 0;
-    if (!stored.matches(context)) {
-        geode::log::warn("ECHO_DASH rejected archive context mismatch {}", path.string());
-        return false;
-    }
+    if (!stored.matches(context)) return false;
 
-    std::deque<AttemptHistoryEntry> summaries;
+    std::unordered_set<std::uint64_t> summaryIds;
     for (std::uint64_t i = 0; i < summaryCount; ++i) {
         AttemptHistoryEntry entry;
-        if (!readSummary(in, entry) || entry.attemptId == 0) return false;
-        summaries.push_back(std::move(entry));
+        if (!readSummary(in, entry)) return false;
+
+        bool const unique = entry.attemptId != 0 && summaryIds.insert(entry.attemptId).second;
+        if (!unique || !validateSummary(entry)) {
+            ++candidate.semanticIssueCount;
+            continue;
+        }
+        candidate.summaries.push_back(std::move(entry));
     }
 
-    std::deque<AttemptRecord> replays;
+    std::unordered_set<std::uint64_t> replayIds;
     std::uint64_t totalFrames = 0;
     for (std::uint64_t i = 0; i < replayCount; ++i) {
         AttemptRecord attempt;
         if (!readAttempt(in, attempt, totalFrames)) return false;
-        replays.push_back(std::move(attempt));
+
+        bool const unique = attempt.attemptId != 0 && replayIds.insert(attempt.attemptId).second;
+        if (unique && validateReplay(attempt)) {
+            candidate.replays.push_back(std::move(attempt));
+        } else {
+            ++candidate.quarantinedReplayCount;
+            ++candidate.semanticIssueCount;
+        }
     }
 
     if (!in) return false;
-
-    m_summaries = std::move(summaries);
-    m_replays = std::move(replays);
-    trimSummaries();
-    trimReplays();
-    m_dirty = false;
-    ++m_revision;
+    if (in.peek() != std::char_traits<char>::eof()) return false;
     return true;
+}
+
+bool EchoReplayArchive::validateCandidateFile(
+    std::filesystem::path const& path,
+    EchoLevelContext const& context
+) const {
+    LoadCandidate candidate;
+    return
+        loadCandidate(path, context, candidate) &&
+        candidate.semanticIssueCount == 0;
+}
+
+bool EchoReplayArchive::load(EchoLevelContext const& context) {
+    m_context = context;
+    m_summaries.clear();
+    m_replays.clear();
+    m_loaded = true;
+    m_dirty = false;
+    m_recoveredFromBackup = false;
+    m_quarantinedReplayCount = 0;
+    ++m_revision;
+
+    auto const path = archivePath();
+    auto const backup = backupPath();
+    std::error_code ec;
+    bool const primaryExists = std::filesystem::exists(path, ec) && !ec;
+    ec.clear();
+    bool const backupExists = std::filesystem::exists(backup, ec) && !ec;
+
+    if (!primaryExists && !backupExists) return true;
+
+    LoadCandidate candidate;
+    if (primaryExists && loadCandidate(path, context, candidate)) {
+        m_summaries = std::move(candidate.summaries);
+        m_replays = std::move(candidate.replays);
+        m_quarantinedReplayCount = candidate.quarantinedReplayCount;
+        trimSummaries();
+        trimReplays();
+        m_dirty = candidate.semanticIssueCount != 0;
+        ++m_revision;
+
+        if (m_quarantinedReplayCount > 0) {
+            geode::log::warn(
+                "ECHO_DASH quarantined {} semantically invalid replay(s) from {}",
+                m_quarantinedReplayCount,
+                path.string()
+            );
+        }
+        return true;
+    }
+
+    if (backupExists && loadCandidate(backup, context, candidate)) {
+        m_summaries = std::move(candidate.summaries);
+        m_replays = std::move(candidate.replays);
+        m_quarantinedReplayCount = candidate.quarantinedReplayCount;
+        m_recoveredFromBackup = true;
+        trimSummaries();
+        trimReplays();
+        m_dirty = candidate.semanticIssueCount != 0;
+        ++m_revision;
+
+        std::error_code restoreError;
+        std::filesystem::copy_file(
+            backup,
+            path,
+            std::filesystem::copy_options::overwrite_existing,
+            restoreError
+        );
+        if (restoreError) {
+            geode::log::warn(
+                "ECHO_DASH loaded known-good backup but could not restore primary {}: {}",
+                path.string(),
+                restoreError.message()
+            );
+        } else {
+            geode::log::warn(
+                "ECHO_DASH recovered archive {} from retained backup",
+                path.string()
+            );
+        }
+
+        if (m_quarantinedReplayCount > 0) {
+            geode::log::warn(
+                "ECHO_DASH backup recovery quarantined {} semantically invalid replay(s)",
+                m_quarantinedReplayCount
+            );
+        }
+        return true;
+    }
+
+    geode::log::warn(
+        "ECHO_DASH rejected both primary and backup archive candidates for {}",
+        context.storageKey()
+    );
+    return false;
 }
 
 bool EchoReplayArchive::save() {
@@ -421,8 +630,11 @@ bool EchoReplayArchive::save() {
     if (ec) return false;
 
     auto const path = archivePath();
-    auto const temp = path.string() + ".tmp";
-    auto const backup = path.string() + ".bak";
+    auto const temp = std::filesystem::path(path.string() + ".tmp");
+    auto const backup = backupPath();
+
+    std::filesystem::remove(temp, ec);
+    ec.clear();
 
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
@@ -444,23 +656,61 @@ bool EchoReplayArchive::save() {
             !writeString(out, m_context.levelName) ||
             !writePod(out, summaryCount) ||
             !writePod(out, replayCount)
-        ) return false;
+        ) {
+            out.close();
+            std::filesystem::remove(temp, ec);
+            return false;
+        }
 
         for (auto const& summary : m_summaries) {
-            if (!writeSummary(out, summary)) return false;
+            if (!validateSummary(summary) || !writeSummary(out, summary)) {
+                out.close();
+                std::filesystem::remove(temp, ec);
+                return false;
+            }
         }
         for (auto const& replay : m_replays) {
-            if (!writeAttempt(out, replay)) return false;
+            if (!validateReplay(replay) || !writeAttempt(out, replay)) {
+                out.close();
+                std::filesystem::remove(temp, ec);
+                return false;
+            }
         }
         out.flush();
-        if (!out) return false;
+        if (!out) {
+            out.close();
+            std::filesystem::remove(temp, ec);
+            return false;
+        }
     }
 
-    std::filesystem::remove(backup, ec);
+    if (!validateCandidateFile(temp, m_context)) {
+        geode::log::warn("ECHO_DASH refused to rotate an invalid temp archive {}", temp.string());
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+
     ec.clear();
-    bool const hadOriginal = std::filesystem::exists(path, ec) && !ec;
-    if (hadOriginal) {
-        std::filesystem::rename(path, backup, ec);
+    bool const hadPrimary = std::filesystem::exists(path, ec) && !ec;
+    bool const primaryKnownGood = hadPrimary && validateCandidateFile(path, m_context);
+
+    if (primaryKnownGood) {
+        ec.clear();
+        std::filesystem::copy_file(
+            path,
+            backup,
+            std::filesystem::copy_options::overwrite_existing,
+            ec
+        );
+        if (ec) {
+            std::filesystem::remove(temp, ec);
+            return false;
+        }
+    }
+
+    if (hadPrimary) {
+        ec.clear();
+        std::filesystem::remove(path, ec);
         if (ec) {
             std::filesystem::remove(temp, ec);
             return false;
@@ -470,24 +720,45 @@ bool EchoReplayArchive::save() {
     ec.clear();
     std::filesystem::rename(temp, path, ec);
     if (ec) {
-        if (hadOriginal) {
+        if (std::filesystem::exists(backup)) {
             std::error_code restoreError;
-            std::filesystem::rename(backup, path, restoreError);
+            std::filesystem::copy_file(
+                backup,
+                path,
+                std::filesystem::copy_options::overwrite_existing,
+                restoreError
+            );
         }
         std::filesystem::remove(temp, ec);
         return false;
     }
 
-    if (hadOriginal) {
-        std::filesystem::remove(backup, ec);
+    if (!validateCandidateFile(path, m_context)) {
+        geode::log::warn("ECHO_DASH post-rotation validation failed for {}", path.string());
+        if (std::filesystem::exists(backup)) {
+            std::error_code restoreError;
+            std::filesystem::copy_file(
+                backup,
+                path,
+                std::filesystem::copy_options::overwrite_existing,
+                restoreError
+            );
+        }
+        return false;
     }
+
+    // Intentionally retain backup as the previous known-good generation.
     m_dirty = false;
+    m_recoveredFromBackup = false;
+    m_quarantinedReplayCount = 0;
     return true;
 }
 
 void EchoReplayArchive::clear() {
     m_summaries.clear();
     m_replays.clear();
+    m_recoveredFromBackup = false;
+    m_quarantinedReplayCount = 0;
     markDirty();
 }
 
@@ -497,11 +768,14 @@ bool EchoReplayArchive::ingest(
 ) {
     if (!m_loaded || attempt.attemptId == 0 || !attempt.finalized) return false;
     if (attempt.attemptId != summary.attemptId) return false;
+    if (!validateSummary(summary) || !validateReplay(attempt)) return false;
     if (summaryById(attempt.attemptId)) return false;
 
     m_summaries.push_back(summary);
     if (!attempt.frames.empty()) {
-        m_replays.push_back(compressReplay(attempt));
+        auto compressed = compressReplay(attempt);
+        if (!validateReplay(compressed)) return false;
+        m_replays.push_back(std::move(compressed));
     }
 
     trimSummaries();
@@ -613,7 +887,9 @@ ReplayArchiveStats EchoReplayArchive::stats() const {
         best ? best->attemptId : 0,
         best ? best->maxProgressPercent : 0.0f,
         m_revision,
-        m_dirty
+        m_dirty,
+        m_recoveredFromBackup,
+        m_quarantinedReplayCount
     };
 }
 
@@ -672,6 +948,10 @@ std::filesystem::path EchoReplayArchive::archiveDirectory() const {
 
 std::filesystem::path EchoReplayArchive::archivePath() const {
     return archiveDirectory() / (m_context.storageKey() + ".edar");
+}
+
+std::filesystem::path EchoReplayArchive::backupPath() const {
+    return std::filesystem::path(archivePath().string() + ".bak");
 }
 
 std::size_t EchoReplayArchive::estimatedSerializedBytes() const {
