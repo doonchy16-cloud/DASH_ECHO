@@ -155,7 +155,8 @@ void EchoGhostFleet::rebuild(EchoReplayArchive const& archive) {
     for (std::size_t i = 0; i < m_activeGhosts; ++i) {
         auto& slot = *m_slots[i];
         slot.attempt = selectedNewestFirst[i];
-        slot.progressAlignmentSafe = progressIsMonotonic(*slot.attempt);
+        slot.progressAlignmentSafe =
+            EchoGhostPlaybackEngine::supportsProgressAlignment(*slot.attempt);
         slot.synchronizedTimeSeconds = 0.0;
         configureSlot(
             slot,
@@ -176,46 +177,74 @@ void EchoGhostFleet::rebuild(EchoReplayArchive const& archive) {
     }
 }
 
-void EchoGhostFleet::synchronize(double timeSeconds) {
-    synchronize(timeSeconds, 0.0f, false);
+void EchoGhostFleet::track(
+    double liveElapsedSeconds,
+    float progressPercent,
+    bool progressAuthority
+) {
+    m_playbackEngine.track(
+        liveElapsedSeconds,
+        progressPercent,
+        progressAuthority
+    );
+    renderFromPlaybackEngine();
 }
 
-void EchoGhostFleet::synchronize(
-    double timeSeconds,
+bool EchoGhostFleet::beginContinuation(
+    double liveElapsedSeconds,
     float progressPercent,
-    bool progressAlignmentEnabled
+    bool progressAuthority
 ) {
-    for (std::size_t i = 0; i < m_activeGhosts; ++i) {
-        auto& slot = *m_slots[i];
-        double resolvedTime = timeSeconds;
-
-        bool const carriesBestIdentity =
-            slot.role == GhostRole::BestRecorded ||
-            slot.role == GhostRole::LastAndBest;
-
-        bool const alignBestIdentity =
-            progressAlignmentEnabled &&
-            m_visual.bestEnabled &&
-            carriesBestIdentity &&
-            slot.progressAlignmentSafe &&
-            slot.attempt;
-
-        if (alignBestIdentity) {
-            resolvedTime = timeForProgress(
-                *slot.attempt,
-                progressPercent,
-                timeSeconds
-            );
-        }
-
-        slot.synchronizedTimeSeconds = resolvedTime;
-        slot.ghost.synchronize(resolvedTime);
+    if (m_activeGhosts == 0) {
+        m_playbackEngine.reset();
+        return false;
     }
-    rebuildPriorityTrails();
+
+    m_playbackEngine.beginContinuation(
+        liveElapsedSeconds,
+        progressPercent,
+        progressAuthority
+    );
+    renderFromPlaybackEngine();
+
+    if (continuationComplete()) {
+        m_playbackEngine.reset();
+        return false;
+    }
+    return true;
+}
+
+void EchoGhostFleet::advanceContinuation(double dt) {
+    if (!m_playbackEngine.isContinuing()) return;
+    m_playbackEngine.advance(dt);
+    renderFromPlaybackEngine();
+}
+
+bool EchoGhostFleet::isContinuing() const {
+    return m_playbackEngine.isContinuing();
+}
+
+bool EchoGhostFleet::continuationComplete() const {
+    if (!m_playbackEngine.isContinuing()) return false;
+
+    for (std::size_t i = 0; i < m_activeGhosts; ++i) {
+        auto const& slot = *m_slots[i];
+        if (
+            slot.attempt &&
+            !m_playbackEngine.finished(
+                *slot.attempt,
+                slot.progressAlignmentSafe
+            )
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void EchoGhostFleet::stop() {
     if (m_priorityTrailNode) m_priorityTrailNode->clear();
+    m_playbackEngine.reset();
     for (auto& slot : m_slots) {
         slot->ghost.stop();
         slot->attempt = nullptr;
@@ -285,6 +314,20 @@ void EchoGhostFleet::configureSlot(
     else slot.role = GhostRole::Older;
 
     slot.ghost.setOpacity(opacityForRank(rank, count, slot.role));
+}
+
+void EchoGhostFleet::renderFromPlaybackEngine() {
+    for (std::size_t i = 0; i < m_activeGhosts; ++i) {
+        auto& slot = *m_slots[i];
+        if (!slot.attempt) continue;
+
+        slot.synchronizedTimeSeconds = m_playbackEngine.resolveTime(
+            *slot.attempt,
+            slot.progressAlignmentSafe
+        );
+        slot.ghost.synchronize(slot.synchronizedTimeSeconds);
+    }
+    rebuildPriorityTrails();
 }
 
 void EchoGhostFleet::rebuildPriorityTrails() {
@@ -367,7 +410,8 @@ void EchoGhostFleet::drawTrailForSlot(Slot const& slot, double timeSeconds) {
 
             if (slot.role == GhostRole::LastAndBest && drawLast && drawBest) {
                 // Dual-role run: broad blue last-attempt ribbon under a narrower
-                // gold best-run ribbon. No halo/aura is rendered anywhere.
+                // gold best-run ribbon. Role changes presentation only; the shared
+                // playback engine has already resolved this slot's source time.
                 m_priorityTrailNode->drawSegment(
                     a, b, m_visual.trailWidth * 1.55f,
                     trailColor(m_visual.lastColor, alpha * 0.58f)
@@ -392,65 +436,6 @@ void EchoGhostFleet::drawTrailForSlot(Slot const& slot, double timeSeconds) {
 
     drawPlayer(false);
     drawPlayer(true);
-}
-
-bool EchoGhostFleet::progressIsMonotonic(AttemptRecord const& attempt) {
-    auto const& frames = attempt.frames;
-    if (frames.size() < 2) return false;
-
-    float previous = frames.front().progressPercent;
-    if (!std::isfinite(previous)) return false;
-
-    for (std::size_t i = 1; i < frames.size(); ++i) {
-        float const current = frames[i].progressPercent;
-        if (!std::isfinite(current) || current < previous) return false;
-        previous = current;
-    }
-
-    return frames.back().progressPercent > frames.front().progressPercent + 0.001f;
-}
-
-double EchoGhostFleet::timeForProgress(
-    AttemptRecord const& attempt,
-    float progressPercent,
-    double fallbackTimeSeconds
-) {
-    auto const& frames = attempt.frames;
-    if (frames.empty() || !std::isfinite(progressPercent)) return fallbackTimeSeconds;
-
-    if (progressPercent <= frames.front().progressPercent) {
-        return frames.front().timeSeconds;
-    }
-    if (progressPercent > frames.back().progressPercent) {
-        // Once the live run has genuinely passed the best recorded run, do not
-        // leave a stale gold ghost frozen behind the player.
-        return frames.back().timeSeconds + 1.0;
-    }
-
-    auto upper = std::lower_bound(
-        frames.begin(),
-        frames.end(),
-        progressPercent,
-        [](FrameRecord const& frame, float value) {
-            return frame.progressPercent < value;
-        }
-    );
-
-    if (upper == frames.begin()) return upper->timeSeconds;
-    if (upper == frames.end()) return frames.back().timeSeconds;
-
-    auto const& to = *upper;
-    auto const& from = *(upper - 1);
-    float const deltaProgress = to.progressPercent - from.progressPercent;
-    if (deltaProgress <= 0.000001f) return to.timeSeconds;
-
-    double const alpha = std::clamp(
-        static_cast<double>(progressPercent - from.progressPercent) /
-            static_cast<double>(deltaProgress),
-        0.0,
-        1.0
-    );
-    return std::lerp(from.timeSeconds, to.timeSeconds, alpha);
 }
 
 std::uint8_t EchoGhostFleet::opacityForRank(
