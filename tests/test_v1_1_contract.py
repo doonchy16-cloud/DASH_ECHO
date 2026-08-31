@@ -57,7 +57,11 @@ class EchoDashV111Contract(unittest.TestCase):
         self.assertIn("timeForProgress", fleet_cpp)
         self.assertRegex(
             fleet_cpp,
-            r"slot\.role == GhostRole::BestRecorded\s*\|\|\s*slot\.role == GhostRole::LastAndBest",
+            r"bool const carriesBestIdentity\s*=\s*slot\.role == GhostRole::BestRecorded\s*\|\|\s*slot\.role == GhostRole::LastAndBest\s*;",
+        )
+        self.assertRegex(
+            fleet_cpp,
+            r"bool const alignBestIdentity\s*=\s*progressAlignmentEnabled.*?carriesBestIdentity.*?slot\.progressAlignmentSafe.*?slot\.attempt\s*;",
         )
         self.assertRegex(
             main,
