@@ -41,31 +41,51 @@ class EchoDashV111Contract(unittest.TestCase):
         self.assertNotIn("lastAura", fleet_header)
         self.assertNotIn("bestAura", fleet_header)
 
-    def test_best_recorded_echo_has_progress_alignment_path(self):
-        fleet_header = self.read("src/EchoGhostFleet.hpp")
+    def test_all_ghosts_use_one_role_agnostic_playback_engine(self):
+        engine_h = self.read("src/EchoGhostPlaybackEngine.hpp")
+        engine_cpp = self.read("src/EchoGhostPlaybackEngine.cpp")
+        fleet_h = self.read("src/EchoGhostFleet.hpp")
         fleet_cpp = self.read("src/EchoGhostFleet.cpp")
-        main = self.read("src/main.cpp")
 
-        self.assertRegex(
-            fleet_header,
-            r"void synchronize\(\s*double timeSeconds,\s*float progressPercent,\s*bool progressAlignmentEnabled\s*\)",
-        )
-        self.assertIn("progressAlignmentSafe", fleet_header)
-        self.assertIn("timeForProgress", fleet_header)
-        self.assertIn("GhostRole::BestRecorded", fleet_cpp)
-        self.assertIn("progressAlignmentEnabled", fleet_cpp)
-        self.assertIn("timeForProgress", fleet_cpp)
-        self.assertRegex(
+        self.assertIn("class EchoGhostPlaybackEngine", engine_h)
+        self.assertIn("GhostPlaybackPhase", engine_h)
+        self.assertIn("Tracking", engine_h)
+        self.assertIn("Continuing", engine_h)
+        self.assertNotIn("GhostRole", engine_h + engine_cpp)
+        self.assertIn("EchoGhostPlaybackEngine m_playbackEngine", fleet_h)
+        self.assertIn("beginContinuation", fleet_h)
+        self.assertIn("advanceContinuation", fleet_h)
+        self.assertIn("continuationComplete", fleet_h)
+        self.assertIn("renderFromPlaybackEngine", fleet_cpp)
+        self.assertNotIn("alignBestIdentity", fleet_cpp)
+        self.assertNotIn("carriesBestIdentity", fleet_cpp)
+        self.assertNotIn("timeForProgress", fleet_h)
+        self.assertNotIn("progressIsMonotonic", fleet_h)
+
+        render_match = re.search(
+            r"void EchoGhostFleet::renderFromPlaybackEngine\(\).*?\n}",
             fleet_cpp,
-            r"bool const carriesBestIdentity\s*=\s*slot\.role == GhostRole::BestRecorded\s*\|\|\s*slot\.role == GhostRole::LastAndBest\s*;",
+            re.S,
         )
+        self.assertIsNotNone(render_match)
+        self.assertNotIn("GhostRole", render_match.group(0))
+        self.assertIn("m_playbackEngine.resolveTime", render_match.group(0))
+
+    def test_confirmed_death_defers_reset_until_all_ghosts_finish(self):
+        main = self.read("src/main.cpp")
+        self.assertIn("confirmedDeath", main)
+        self.assertIn("deferredResetRequested", main)
+        self.assertIn("beginContinuation", main)
+        self.assertIn("advanceContinuation", main)
+        self.assertIn("continuationComplete", main)
+        self.assertIn("performResetLifecycle", main)
         self.assertRegex(
-            fleet_cpp,
-            r"(?s)bool const alignBestIdentity\s*=\s*progressAlignmentEnabled.*?carriesBestIdentity.*?slot\.progressAlignmentSafe.*?slot\.attempt\s*;",
+            main,
+            r"if \(m_fields->fleet\.isContinuing\(\)\)\s*\{\s*m_fields->deferredResetRequested = true;\s*return;\s*}",
         )
         self.assertRegex(
             main,
-            r"fleet\.synchronize\(\s*m_fields->recorder\.activeElapsedSeconds\(\),\s*this->getCurrentPercent\(\)",
+            r"if \(m_fields->fleet\.continuationComplete\(\)\)\s*\{\s*performResetLifecycle\(\);",
         )
 
     def test_fleet_is_dynamic_and_supports_256(self):
