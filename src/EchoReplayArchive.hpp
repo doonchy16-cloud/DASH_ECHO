@@ -37,14 +37,18 @@ struct ReplayArchiveStats {
 class EchoReplayArchive final {
 public:
     static constexpr std::uint32_t kSchemaVersion = 1;
-    static constexpr std::size_t kMaxSummaries = 4096;
-    static constexpr std::size_t kHardMaxReplays = 2048;
-    static constexpr std::size_t kDefaultReplayLimit = 512;
-    static constexpr std::size_t kMinDiskBudgetMb = 64;
-    static constexpr std::size_t kMaxDiskBudgetMb = 2048;
-    static constexpr std::size_t kDefaultDiskBudgetMb = 512;
-    static constexpr std::uint64_t kHardMaxFramesOnDisk = 4'000'000;
-    static constexpr std::uint64_t kHardMaxArchiveBytes = 2ull * 1024ull * 1024ull * 1024ull;
+
+    // v1.1.1 treats every finalized run as archive-worthy. These are safety
+    // ceilings, not a normal rolling-history policy; ordinary eviction is
+    // driven by the explicit user retention / disk-budget settings.
+    static constexpr std::size_t kMaxSummaries = 100'000;
+    static constexpr std::size_t kHardMaxReplays = 100'000;
+    static constexpr std::size_t kDefaultReplayLimit = 10'000;
+    static constexpr std::size_t kMinDiskBudgetMb = 128;
+    static constexpr std::size_t kMaxDiskBudgetMb = 8'192;
+    static constexpr std::size_t kDefaultDiskBudgetMb = 2'048;
+    static constexpr std::uint64_t kHardMaxFramesOnDisk = 50'000'000;
+    static constexpr std::uint64_t kHardMaxArchiveBytes = 8ull * 1024ull * 1024ull * 1024ull;
 
     void configure(
         std::size_t replayLimit,
