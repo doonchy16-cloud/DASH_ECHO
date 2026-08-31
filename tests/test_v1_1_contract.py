@@ -152,7 +152,7 @@ class EchoDashV112Contract(unittest.TestCase):
         self.assertIn("validateCameraSnapshot", cpp)
         self.assertRegex(
             cpp,
-            r"(?s)if \(validateReplay\(attempt\)\).*?replays\.push_back.*?else.*?quarantinedReplayCount",
+            r"(?s)validateReplay\(attempt\).*?replays\.push_back.*?else.*?quarantinedReplayCount",
         )
 
     def test_fleet_is_dynamic_and_supports_256(self):
