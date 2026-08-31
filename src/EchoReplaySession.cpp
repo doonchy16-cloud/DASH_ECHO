@@ -221,7 +221,6 @@ void EchoReplaySession::bindGhostToOwnedClip() {
         return;
     }
     m_ghost.setOpacity(kReplayOpacity);
-    m_ghost.setAuraStyle({});
     m_ghost.play(attempt);
 }
 
