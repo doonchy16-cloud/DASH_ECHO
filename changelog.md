@@ -1,3 +1,18 @@
+# v1.1.1
+
+## Runtime UX & Persistence Repair
+
+- Moved Replay Studio access out of live gameplay and into the Geometry Dash pause menu.
+- Removed the priority aura/halo renderer and all aura settings completely.
+- Preserved the blue Last Attempt trail and golden Best Recorded Echo trail as the clean priority identity system.
+- Made Attempt #1 use the same explicit begin-and-sample lifecycle as every later attempt.
+- Persist every successful finalized attempt before the next attempt begins.
+- Raised default replay retention to 10,000 runs with a 100,000-run safety ceiling and storage-budget protection.
+- Reorganized Replay Studio into a clearer two-row control layout.
+- Kept GD Level PB, Best Recorded Echo, Session Best, and Latest Attempt as separate truth concepts.
+
+Runtime verification remains a separate gate.
+
 # v1.1.0
 
 ## ECHO_DASH — Multiverse & Personalization Rebuild
