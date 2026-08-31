@@ -1,5 +1,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/PauseLayer.hpp>
+#include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 
 #include "EchoAttemptHistory.hpp"
 #include "EchoDeathAnalytics.hpp"
@@ -21,6 +24,9 @@
 using namespace geode::prelude;
 
 namespace {
+
+constexpr char const* kReleaseName = "ECHO_DASH";
+constexpr char const* kReleaseVersion = "v1.1.1";
 
 dash_echo::ColorRGB toEchoColor(cocos2d::ccColor3B const& color) {
     return dash_echo::ColorRGB {
@@ -97,6 +103,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         applyEchoDashSettings(true);
         initializeArchive(level);
         ensureReplayControls();
+        ensureRenderSystems();
+
+        // Attempt #1 must be created by the same explicit lifecycle path used
+        // after every reset. This removes the v1.1 lazy-first-attempt asymmetry.
+        startNewAttempt();
         return true;
     }
 
@@ -155,7 +166,9 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         bool const loaded = archive.load(m_fields->levelContext);
         if (!loaded) {
             log::warn(
-                "ECHO_DASH v1.1.0 rejected or could not read archive for {}. Starting with an empty safe archive.",
+                "{} {} rejected or could not read archive for {}. Starting with an empty safe archive.",
+                kReleaseName,
+                kReleaseVersion,
                 m_fields->levelContext.storageKey()
             );
         }
@@ -187,7 +200,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
 
         if (m_fields->archiveReady && m_fields->archive.isDirty()) {
             if (!m_fields->archive.save()) {
-                log::warn("ECHO_DASH v1.1.0 could not save prior level archive before context switch");
+                log::warn("{} {} could not save prior level archive before context switch", kReleaseName, kReleaseVersion);
             }
         }
 
@@ -202,7 +215,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const bestColor = mod->getSettingValue<cocos2d::ccColor3B>("best-ghost-color");
 
         return fmt::format(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             mod->getSettingValue<std::int64_t>("ghost-count"),
             mod->getSettingValue<std::string>("visual-profile"),
             mod->getSettingValue<std::int64_t>("older-opacity-min"),
@@ -212,14 +225,10 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             mod->getSettingValue<bool>("last-ghost-enabled"),
             lastColor.r, lastColor.g, lastColor.b,
             mod->getSettingValue<std::int64_t>("last-ghost-opacity"),
-            mod->getSettingValue<bool>("last-ghost-aura"),
-            mod->getSettingValue<double>("last-ghost-aura-size"),
             mod->getSettingValue<bool>("last-ghost-trail"),
             mod->getSettingValue<bool>("best-ghost-enabled"),
             bestColor.r, bestColor.g, bestColor.b,
             mod->getSettingValue<std::int64_t>("best-ghost-opacity"),
-            mod->getSettingValue<bool>("best-ghost-aura"),
-            mod->getSettingValue<double>("best-ghost-aura-size"),
             mod->getSettingValue<bool>("best-ghost-trail"),
             mod->getSettingValue<double>("trail-seconds"),
             mod->getSettingValue<double>("trail-width"),
@@ -230,8 +239,6 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             mod->getSettingValue<bool>("death-xray"),
             mod->getSettingValue<bool>("heat-strip"),
             mod->getSettingValue<std::int64_t>("heat-strip-opacity"),
-            mod->getSettingValue<double>("launcher-scale"),
-            mod->getSettingValue<bool>("replay-ready-hint"),
             mod->getSettingValue<std::string>("default-playback-rate"),
             mod->getSettingValue<std::string>("default-camera-mode"),
             mod->getSettingValue<std::int64_t>("recorder-sample-rate"),
@@ -274,8 +281,6 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         visual.lastOpacity = static_cast<std::uint8_t>(std::clamp<std::int64_t>(
             mod->getSettingValue<std::int64_t>("last-ghost-opacity"), 0, 255
         ));
-        visual.lastAura = mod->getSettingValue<bool>("last-ghost-aura");
-        visual.lastAuraSize = static_cast<float>(mod->getSettingValue<double>("last-ghost-aura-size"));
         visual.lastTrail = mod->getSettingValue<bool>("last-ghost-trail");
 
         visual.bestEnabled = mod->getSettingValue<bool>("best-ghost-enabled");
@@ -283,8 +288,6 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         visual.bestOpacity = static_cast<std::uint8_t>(std::clamp<std::int64_t>(
             mod->getSettingValue<std::int64_t>("best-ghost-opacity"), 0, 255
         ));
-        visual.bestAura = mod->getSettingValue<bool>("best-ghost-aura");
-        visual.bestAuraSize = static_cast<float>(mod->getSettingValue<double>("best-ghost-aura-size"));
         visual.bestTrail = mod->getSettingValue<bool>("best-ghost-trail");
 
         visual.trailSeconds = static_cast<float>(mod->getSettingValue<double>("trail-seconds"));
@@ -300,10 +303,14 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         m_fields->recorder.setCaptureSampleRate(static_cast<double>(sampleRate));
 
         auto const replayRetention = std::clamp<std::int64_t>(
-            mod->getSettingValue<std::int64_t>("replay-retention"), 16, 2048
+            mod->getSettingValue<std::int64_t>("replay-retention"),
+            256,
+            static_cast<std::int64_t>(dash_echo::EchoReplayArchive::kHardMaxReplays)
         );
         auto const diskBudget = std::clamp<std::int64_t>(
-            mod->getSettingValue<std::int64_t>("disk-budget-mb"), 64, 2048
+            mod->getSettingValue<std::int64_t>("disk-budget-mb"),
+            static_cast<std::int64_t>(dash_echo::EchoReplayArchive::kMinDiskBudgetMb),
+            static_cast<std::int64_t>(dash_echo::EchoReplayArchive::kMaxDiskBudgetMb)
         );
         m_fields->archive.configure(
             static_cast<std::size_t>(replayRetention),
@@ -328,15 +335,6 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         m_fields->replay.setDefaultCameraMode(
             cameraModeFromSetting(mod->getSettingValue<std::string>("default-camera-mode"))
         );
-
-        if (m_fields->replayControls) {
-            m_fields->replayControls->setLauncherScale(
-                static_cast<float>(mod->getSettingValue<double>("launcher-scale"))
-            );
-            m_fields->replayControls->setReplayReadyHintEnabled(
-                mod->getSettingValue<bool>("replay-ready-hint")
-            );
-        }
 
         m_fields->diagnosticsEnabled = mod->getSettingValue<bool>("diagnostics");
         if (m_fields->diagnosticsLabel) {
@@ -384,7 +382,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const archive = m_fields->archive.stats();
         auto const recorder = m_fields->recorder.stats();
         m_fields->diagnosticsLabel->setString(fmt::format(
-            "ECHO_DASH 1.1 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | session {} frames @ {:.0f}Hz",
+            "ECHO_DASH 1.1.1 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | session {} frames @ {:.0f}Hz",
             fleet.assignedGhosts,
             fleet.configuredGhostLimit,
             fleet.allocatedGhostSlots,
@@ -459,17 +457,13 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         );
 
         if (!controls) {
-            log::warn("ECHO_DASH v1.1.0 could not create Replay Studio controls");
+            log::warn("{} {} could not create Replay Studio controls", kReleaseName, kReleaseVersion);
             return;
         }
 
         controls->setID("echo-dash-replay-controls");
         this->addChild(controls, 10000);
         m_fields->replayControls = controls;
-
-        auto* mod = Mod::get();
-        controls->setLauncherScale(static_cast<float>(mod->getSettingValue<double>("launcher-scale")));
-        controls->setReplayReadyHintEnabled(mod->getSettingValue<bool>("replay-ready-hint"));
         updateReplayTruthContext();
         controls->refresh();
     }
@@ -485,6 +479,20 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         m_fields->replay.stop();
     }
 
+    void startNewAttempt() {
+        if (!m_fields->captureEnabled) return;
+        auto& recorder = m_fields->recorder;
+        if (recorder.hasActiveAttempt()) return;
+
+        recorder.beginAttempt();
+        recorder.captureEventFrame(
+            this->getCurrentPercent(),
+            this->m_player1,
+            this->m_player2,
+            this->m_objectLayer
+        );
+    }
+
     bool finalizeActiveAttempt(dash_echo::AttemptEndReason reason) {
         auto& recorder = m_fields->recorder;
         auto& deaths = m_fields->deaths;
@@ -496,14 +504,15 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         if (!active) return false;
 
         std::uint64_t const attemptId = active->attemptId;
-        float const priorBestProgress = archive.stats().bestRecordedProgress;
-        std::uint64_t const priorBestId = archive.stats().bestRecordedAttemptId;
+        auto const priorStats = archive.stats();
+        float const priorBestProgress = priorStats.bestRecordedProgress;
+        std::uint64_t const priorBestId = priorStats.bestRecordedAttemptId;
 
         recorder.finalizeAttempt(reason);
 
         auto const* finalized = recorder.attemptById(attemptId);
         if (!finalized || !finalized->finalized) {
-            log::warn("ECHO_DASH v1.1.0 could not resolve finalized attempt {}", attemptId);
+            log::warn("{} {} could not resolve finalized attempt {}", kReleaseName, kReleaseVersion, attemptId);
             return false;
         }
 
@@ -519,16 +528,22 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             priorBestProgress,
             bestIdAfter
         );
-        if (!committed) return false;
-
-        auto const* entry = history.entryForAttempt(attemptId);
-        if (!entry || !archive.ingest(*finalized, *entry)) {
-            log::warn("ECHO_DASH v1.1.0 could not ingest attempt {} into replay archive", attemptId);
+        if (!committed) {
+            log::warn("{} {} rejected history commit for attempt {}", kReleaseName, kReleaseVersion, attemptId);
             return false;
         }
 
+        auto const* entry = history.entryForAttempt(attemptId);
+        if (!entry || !archive.ingest(*finalized, *entry)) {
+            log::warn("{} {} could not ingest attempt {} into replay archive", kReleaseName, kReleaseVersion, attemptId);
+            return false;
+        }
+
+        // Every successful finalization is persisted immediately. This is more
+        // I/O than deferred batching, but it makes a completed run durable before
+        // the next attempt begins and directly addresses the first-run loss.
         if (!archive.save()) {
-            log::warn("ECHO_DASH v1.1.0 could not persist archive after attempt {}", attemptId);
+            log::warn("{} {} could not persist archive after attempt {}", kReleaseName, kReleaseVersion, attemptId);
         }
 
         m_fields->sessionBestProgress = std::max(
@@ -580,6 +595,15 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
     }
 
     void postUpdate(float dt) {
+        float const safeDt = std::isfinite(dt) ? std::clamp(dt, 0.0f, 0.25f) : 0.0f;
+        m_fields->settingsPollSeconds += safeDt;
+        m_fields->diagnosticsPollSeconds += safeDt;
+
+        if (m_fields->settingsPollSeconds >= 0.50f) {
+            m_fields->settingsPollSeconds = 0.0f;
+            applyEchoDashSettings(false);
+        }
+
         if (m_fields->replayStudioOpen) {
             m_fields->replay.advance(dt);
             applyReplayViewport();
@@ -588,14 +612,6 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         }
 
         PlayLayer::postUpdate(dt);
-
-        float safeDt = std::isfinite(dt) ? std::clamp(dt, 0.0f, 0.25f) : 0.0f;
-        m_fields->settingsPollSeconds += safeDt;
-        m_fields->diagnosticsPollSeconds += safeDt;
-        if (m_fields->settingsPollSeconds >= 0.50f) {
-            m_fields->settingsPollSeconds = 0.0f;
-            applyEchoDashSettings(false);
-        }
 
         ensureReplayControls();
         ensureDiagnosticsLabel();
@@ -612,17 +628,19 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
 
         if (!m_fields->captureEnabled) return;
 
-        auto& recorder = m_fields->recorder;
-        if (!recorder.hasActiveAttempt()) recorder.beginAttempt();
+        if (!m_fields->recorder.hasActiveAttempt()) {
+            log::warn("{} {} repaired missing active attempt during postUpdate", kReleaseName, kReleaseVersion);
+            startNewAttempt();
+        }
 
-        recorder.captureFrame(
+        m_fields->recorder.captureFrame(
             dt,
             this->getCurrentPercent(),
             this->m_player1,
             this->m_player2,
             this->m_objectLayer
         );
-        m_fields->fleet.synchronize(recorder.activeElapsedSeconds());
+        m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* object) {
@@ -684,9 +702,10 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         m_fields->captureEnabled = true;
         ensureCurrentArchiveContext();
         applyEchoDashSettings(true);
-        m_fields->recorder.beginAttempt();
+        startNewAttempt();
         m_fields->fleet.rebuild(m_fields->archive);
         m_fields->fleetNeedsRebuild = false;
+        m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
         m_fields->deathOverlay.refresh(m_fields->deaths);
         m_fields->heatmapOverlay.refresh(m_fields->deaths);
         updateReplayTruthContext();
@@ -708,7 +727,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         finalizeActiveAttempt(dash_echo::AttemptEndReason::LayerExit);
 
         if (m_fields->archive.isDirty() && !m_fields->archive.save()) {
-            log::warn("ECHO_DASH v1.1.0 could not persist dirty archive during PlayLayer exit");
+            log::warn("{} {} could not persist dirty archive during PlayLayer exit", kReleaseName, kReleaseVersion);
         }
 
         auto const recorderStats = m_fields->recorder.stats();
@@ -716,7 +735,9 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const deathStats = m_fields->deaths.stats();
         auto const archiveStats = m_fields->archive.stats();
         log::debug(
-            "ECHO_DASH v1.1.0 session closed: {} attempts started, {} finalized, archive {} summaries / {} replays / {} frames, best echo {} {:.2f}%, session {:.2f}%, recorder {} frames @ {:.0f}Hz, ghosts {}/{} pool {}, {} death clusters",
+            "{} {} session closed: {} attempts started, {} finalized, archive {} summaries / {} replays / {} frames, best echo {} {:.2f}%, session {:.2f}%, recorder {} frames @ {:.0f}Hz, ghosts {}/{} pool {}, {} death clusters",
+            kReleaseName,
+            kReleaseVersion,
             recorderStats.attemptsStarted,
             recorderStats.attemptsFinalized,
             archiveStats.summaryCount,
@@ -738,5 +759,54 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         m_fields->deathOverlay.detach();
         m_fields->heatmapOverlay.detach();
         PlayLayer::onExit();
+    }
+};
+
+class $modify(EchoDashPauseLayer, PauseLayer) {
+    void customSetup() {
+        PauseLayer::customSetup();
+
+        // Pause menu is the only ordinary entrypoint in v1.1.1. Nothing remains
+        // floating over live gameplay.
+        auto* menu = this->getChildByID("left-button-menu");
+        if (!menu) return;
+
+        auto* sprite = ButtonSprite::create("ECHO");
+        if (!sprite) return;
+        sprite->setScale(0.62f);
+
+        auto* button = CCMenuItemSpriteExtra::create(
+            sprite,
+            this,
+            menu_selector(EchoDashPauseLayer::onEchoDash)
+        );
+        if (!button) return;
+
+        button->setID("echo-dash-pause-button");
+        menu->addChild(button);
+        menu->updateLayout();
+    }
+
+    void onEchoDash(CCObject* sender) {
+        auto* play = PlayLayer::get();
+        if (!play) return;
+
+        auto* controls = typeinfo_cast<dash_echo::EchoReplayControls*>(
+            play->getChildByID("echo-dash-replay-controls")
+        );
+        if (!controls || !controls->hasReplay()) {
+            FLAlertLayer::create(
+                "ECHO_DASH",
+                "No saved replay yet. Finish, die, reset, or exit an attempt first.",
+                "OK"
+            )->show();
+            return;
+        }
+
+        // Open Studio first so its PlayLayer callback freezes normal capture,
+        // then resume/remove the vanilla pause layer underneath it.
+        if (controls->openStudio()) {
+            this->onResume(sender);
+        }
     }
 };
