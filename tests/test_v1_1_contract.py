@@ -120,10 +120,7 @@ class EchoDashV112Contract(unittest.TestCase):
             cpp,
             r"(?s)bool EchoReplayArchive::load\(.*?loadCandidate\(path.*?loadCandidate\(backup",
         )
-        self.assertRegex(
-            cpp,
-            r"m_recoveredFromBackup\s*=\s*true",
-        )
+        self.assertRegex(cpp, r"m_recoveredFromBackup\s*=\s*true")
 
         save = re.search(
             r"bool EchoReplayArchive::save\(\)\s*\{(?P<body>.*?)\n}\n\nvoid EchoReplayArchive::clear",
@@ -154,6 +151,18 @@ class EchoDashV112Contract(unittest.TestCase):
             cpp,
             r"(?s)validateReplay\(attempt\).*?replays\.push_back.*?else.*?quarantinedReplayCount",
         )
+
+    def test_release_surfaces_are_all_v112(self):
+        main = self.read("src/main.cpp")
+        workflow = self.read(".github/workflows/build-v1.yml")
+
+        self.assertRegex(main, r'kReleaseVersion\s*=\s*"v1\.1\.2"')
+        self.assertIn("ECHO_DASH 1.1.2 |", main)
+        self.assertIn("name: ECHO_DASH v1.1.2 Build", workflow)
+        self.assertIn("Run v1.1.2 contract regression tests", workflow)
+        self.assertIn("ECHO-DASH-v1.1.2-compiler-evidence", workflow)
+        self.assertIn("ECHO-DASH-v1.1.2-windows", workflow)
+        self.assertIn("Upload v1.1.2 candidate", workflow)
 
     def test_fleet_is_dynamic_and_supports_256(self):
         header = self.read("src/EchoGhostFleet.hpp")
