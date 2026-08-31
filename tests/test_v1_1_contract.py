@@ -6,15 +6,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class EchoDashV111Contract(unittest.TestCase):
+class EchoDashV112Contract(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
     def test_branding_version_and_legacy_id(self):
         metadata = json.loads(self.read("mod.json"))
         self.assertEqual(metadata["name"], "ECHO_DASH")
-        self.assertEqual(metadata["version"], "v1.1.1")
+        self.assertEqual(metadata["version"], "v1.1.2")
         self.assertEqual(metadata["id"], "doonchy.dash-echo")
+        self.assertIn("VERSION 1.1.2", self.read("CMakeLists.txt"))
 
     def test_ghost_count_supports_256(self):
         metadata = json.loads(self.read("mod.json"))
@@ -88,6 +89,72 @@ class EchoDashV111Contract(unittest.TestCase):
             r"if \(\s*m_fields->deferredResetRequested\s*&&\s*m_fields->fleet\.continuationComplete\(\)\s*\)\s*\{\s*performResetLifecycle\(\);",
         )
 
+    def test_settings_refresh_remains_live_while_replay_studio_is_open(self):
+        main = self.read("src/main.cpp")
+        post = re.search(
+            r"void postUpdate\(float dt\)\s*\{(?P<body>.*?)\n\s*}\n\n\s*void destroyPlayer",
+            main,
+            re.S,
+        )
+        self.assertIsNotNone(post)
+        body = post.group("body")
+        poll = body.find("applyEchoDashSettings(false)")
+        studio_early_return = body.find("if (m_fields->replayStudioOpen)")
+        self.assertGreaterEqual(poll, 0)
+        self.assertGreaterEqual(studio_early_return, 0)
+        self.assertLess(poll, studio_early_return)
+
+    def test_archive_retains_known_good_backup_and_recovers_from_it(self):
+        header = self.read("src/EchoReplayArchive.hpp")
+        cpp = self.read("src/EchoReplayArchive.cpp")
+
+        self.assertIn("recoveredFromBackup", header)
+        self.assertIn("quarantinedReplayCount", header)
+        self.assertIn("loadCandidate", header)
+        self.assertIn("backupPath", header)
+        self.assertIn("validateReplay", header)
+
+        self.assertIn("EchoReplayArchive::loadCandidate", cpp)
+        self.assertIn("EchoReplayArchive::backupPath", cpp)
+        self.assertRegex(
+            cpp,
+            r"(?s)bool EchoReplayArchive::load\(.*?loadCandidate\(path.*?loadCandidate\(backup",
+        )
+        self.assertRegex(
+            cpp,
+            r"m_recoveredFromBackup\s*=\s*true",
+        )
+
+        save = re.search(
+            r"bool EchoReplayArchive::save\(\)\s*\{(?P<body>.*?)\n}\n\nvoid EchoReplayArchive::clear",
+            cpp,
+            re.S,
+        )
+        self.assertIsNotNone(save)
+        save_body = save.group("body")
+        self.assertIn("validateCandidateFile", save_body)
+        self.assertNotRegex(save_body, r"remove\(backup")
+
+    def test_archive_semantically_validates_and_quarantines_bad_replays(self):
+        header = self.read("src/EchoReplayArchive.hpp")
+        cpp = self.read("src/EchoReplayArchive.cpp")
+
+        self.assertIn("validateReplay", header)
+        self.assertIn("validateFrame", header)
+        self.assertIn("validateSummary", header)
+        self.assertIn("m_quarantinedReplayCount", header)
+
+        self.assertIn("std::isfinite(frame.timeSeconds)", cpp)
+        self.assertIn("std::isfinite(frame.progressPercent)", cpp)
+        self.assertIn("frame.timeSeconds < previousTime", cpp)
+        self.assertIn("frame.sequence <= previousSequence", cpp)
+        self.assertIn("validatePlayerSnapshot", cpp)
+        self.assertIn("validateCameraSnapshot", cpp)
+        self.assertRegex(
+            cpp,
+            r"(?s)if \(validateReplay\(attempt\)\).*?replays\.push_back.*?else.*?quarantinedReplayCount",
+        )
+
     def test_fleet_is_dynamic_and_supports_256(self):
         header = self.read("src/EchoGhostFleet.hpp")
         self.assertNotIn("std::array<Slot, kMaxGhosts>", header)
@@ -152,16 +219,18 @@ class EchoDashV111Contract(unittest.TestCase):
                 "DASH ECHO v0.9",
                 "DASH ECHO v1.0",
                 "ECHO_DASH v1.1.0",
+                "ECHO_DASH v1.1.1",
             )):
                 stale.append(path.name)
         self.assertEqual(stale, [])
 
-    def test_about_and_readme_are_v111(self):
+    def test_about_and_readme_are_v112(self):
         combined = self.read("README.md") + "\n" + self.read("about.md")
         self.assertIn("ECHO_DASH", combined)
-        self.assertIn("v1.1.1", combined)
+        self.assertIn("v1.1.2", combined)
         self.assertIn("pause", combined.lower())
         self.assertIn("trail", combined.lower())
+        self.assertIn("backup", combined.lower())
 
 
 if __name__ == "__main__":
