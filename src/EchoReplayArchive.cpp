@@ -771,12 +771,13 @@ bool EchoReplayArchive::ingest(
     if (!validateSummary(summary) || !validateReplay(attempt)) return false;
     if (summaryById(attempt.attemptId)) return false;
 
+    // Prepare and validate the complete replay payload before mutating either
+    // archive container. This keeps summary + replay ingestion transactional.
+    auto compressed = compressReplay(attempt);
+    if (!validateReplay(compressed)) return false;
+
     m_summaries.push_back(summary);
-    if (!attempt.frames.empty()) {
-        auto compressed = compressReplay(attempt);
-        if (!validateReplay(compressed)) return false;
-        m_replays.push_back(std::move(compressed));
-    }
+    m_replays.push_back(std::move(compressed));
 
     trimSummaries();
     trimReplays();
