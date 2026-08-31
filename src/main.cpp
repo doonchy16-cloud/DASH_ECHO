@@ -26,7 +26,7 @@ using namespace geode::prelude;
 namespace {
 
 constexpr char const* kReleaseName = "ECHO_DASH";
-constexpr char const* kReleaseVersion = "v1.1.1";
+constexpr char const* kReleaseVersion = "v1.1.2";
 
 dash_echo::ColorRGB toEchoColor(cocos2d::ccColor3B const& color) {
     return dash_echo::ColorRGB {
@@ -171,6 +171,25 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
                 "{} {} rejected or could not read archive for {}. Starting with an empty safe archive.",
                 kReleaseName,
                 kReleaseVersion,
+                m_fields->levelContext.storageKey()
+            );
+        }
+
+        auto const archiveLoadStats = archive.stats();
+        if (archiveLoadStats.recoveredFromBackup) {
+            log::warn(
+                "{} {} recovered {} from the previous known-good archive generation",
+                kReleaseName,
+                kReleaseVersion,
+                m_fields->levelContext.storageKey()
+            );
+        }
+        if (archiveLoadStats.quarantinedReplayCount > 0) {
+            log::warn(
+                "{} {} quarantined {} invalid replay(s) while loading {}",
+                kReleaseName,
+                kReleaseVersion,
+                archiveLoadStats.quarantinedReplayCount,
                 m_fields->levelContext.storageKey()
             );
         }
@@ -384,13 +403,15 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const archive = m_fields->archive.stats();
         auto const recorder = m_fields->recorder.stats();
         m_fields->diagnosticsLabel->setString(fmt::format(
-            "ECHO_DASH 1.1.1 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | session {} frames @ {:.0f}Hz",
+            "ECHO_DASH 1.1.2 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | recovery {} quarantine {} | session {} frames @ {:.0f}Hz",
             fleet.assignedGhosts,
             fleet.configuredGhostLimit,
             fleet.allocatedGhostSlots,
             archive.replayCount,
             archive.summaryCount,
             archive.retainedFrames,
+            archive.recoveredFromBackup ? "backup" : "primary",
+            archive.quarantinedReplayCount,
             recorder.retainedFrames,
             recorder.captureSampleRate
         ).c_str());
@@ -805,7 +826,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const deathStats = m_fields->deaths.stats();
         auto const archiveStats = m_fields->archive.stats();
         log::debug(
-            "{} {} session closed: {} attempts started, {} finalized, archive {} summaries / {} replays / {} frames, best echo {} {:.2f}%, session {:.2f}%, recorder {} frames @ {:.0f}Hz, ghosts {}/{} pool {}, {} death clusters",
+            "{} {} session closed: {} attempts started, {} finalized, archive {} summaries / {} replays / {} frames, recovery {}, quarantine {}, best echo {} {:.2f}%, session {:.2f}%, recorder {} frames @ {:.0f}Hz, ghosts {}/{} pool {}, {} death clusters",
             kReleaseName,
             kReleaseVersion,
             recorderStats.attemptsStarted,
@@ -813,6 +834,8 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             archiveStats.summaryCount,
             archiveStats.replayCount,
             archiveStats.retainedFrames,
+            archiveStats.recoveredFromBackup ? "backup" : "primary",
+            archiveStats.quarantinedReplayCount,
             archiveStats.bestRecordedAttemptId,
             archiveStats.bestRecordedProgress,
             m_fields->sessionBestProgress,
@@ -836,8 +859,8 @@ class $modify(EchoDashPauseLayer, PauseLayer) {
     void customSetup() {
         PauseLayer::customSetup();
 
-        // Pause menu is the only ordinary entrypoint in v1.1.1. Nothing remains
-        // floating over live gameplay.
+        // Pause menu remains the only ordinary entrypoint. Nothing from
+        // ECHO_DASH floats over live gameplay.
         auto* menu = this->getChildByID("left-button-menu");
         if (!menu) return;
 
