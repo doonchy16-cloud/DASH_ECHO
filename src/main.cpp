@@ -87,6 +87,8 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         ReplayViewportRestore replayViewportRestore;
         dash_echo::EchoLevelContext levelContext;
         bool captureEnabled = true;
+        bool confirmedDeath = false;
+        bool deferredResetRequested = false;
         bool archiveReady = false;
         bool replayStudioOpen = false;
         bool fleetNeedsRebuild = true;
@@ -450,8 +452,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
                 }
 
                 restoreActiveViewportAfterStudio();
-                if (m_fields->recorder.hasActiveAttempt()) {
-                    m_fields->fleet.synchronize(
+                if (
+                    m_fields->recorder.hasActiveAttempt() &&
+                    !m_fields->fleet.isContinuing()
+                ) {
+                    m_fields->fleet.track(
                         m_fields->recorder.activeElapsedSeconds(),
                         this->getCurrentPercent(),
                         !m_fields->levelContext.platformer
@@ -484,6 +489,9 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
     }
 
     void startNewAttempt() {
+        m_fields->confirmedDeath = false;
+        m_fields->deferredResetRequested = false;
+
         if (!m_fields->captureEnabled) return;
         auto& recorder = m_fields->recorder;
         if (recorder.hasActiveAttempt()) return;
@@ -589,17 +597,51 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             deathXray ? topGhostZOrder + 3 : topGhostZOrder - 1
         );
 
-        if (m_fields->fleetNeedsRebuild && m_fields->archiveReady) {
+        // Archive-backed fleet pointers must remain stable while continuation is
+        // running. Settings that request a rebuild are therefore applied at the
+        // next safe lifecycle boundary instead of resetting the shared engine.
+        if (
+            m_fields->fleetNeedsRebuild &&
+            m_fields->archiveReady &&
+            !m_fields->fleet.isContinuing()
+        ) {
             m_fields->fleet.rebuild(m_fields->archive);
             m_fields->fleetNeedsRebuild = false;
             if (m_fields->recorder.hasActiveAttempt()) {
-                m_fields->fleet.synchronize(
+                m_fields->fleet.track(
                     m_fields->recorder.activeElapsedSeconds(),
                     this->getCurrentPercent(),
                     !m_fields->levelContext.platformer
                 );
             }
         }
+    }
+
+    void performResetLifecycle() {
+        closeReplayStudioForLifecycle();
+
+        // The fleet owns pointers into archive replay records, so it must release
+        // those pointers before finalization can ingest/mutate the archive.
+        m_fields->fleet.stop();
+        finalizeActiveAttempt(dash_echo::AttemptEndReason::Reset);
+
+        PlayLayer::resetLevel();
+
+        m_fields->captureEnabled = true;
+        ensureCurrentArchiveContext();
+        applyEchoDashSettings(true);
+        startNewAttempt();
+        m_fields->fleet.rebuild(m_fields->archive);
+        m_fields->fleetNeedsRebuild = false;
+        m_fields->fleet.track(
+            m_fields->recorder.activeElapsedSeconds(),
+            this->getCurrentPercent(),
+            !m_fields->levelContext.platformer
+        );
+        m_fields->deathOverlay.refresh(m_fields->deaths);
+        m_fields->heatmapOverlay.refresh(m_fields->deaths);
+        updateReplayTruthContext();
+        if (m_fields->replayControls) m_fields->replayControls->refresh();
     }
 
     void postUpdate(float dt) {
@@ -619,6 +661,9 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             return;
         }
 
+        // Geometry Dash still advances its native death state. If it reaches its
+        // reset point while ECHO_DASH is continuing ghosts, resetLevel() below
+        // records that request and returns without mutating archive/fleet state.
         PlayLayer::postUpdate(dt);
 
         ensureReplayControls();
@@ -632,6 +677,17 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         if (m_fields->diagnosticsPollSeconds >= 0.50f) {
             m_fields->diagnosticsPollSeconds = 0.0f;
             refreshDiagnostics();
+        }
+
+        if (m_fields->fleet.isContinuing()) {
+            m_fields->fleet.advanceContinuation(static_cast<double>(safeDt));
+            if (
+                m_fields->deferredResetRequested &&
+                m_fields->fleet.continuationComplete()
+            ) {
+                performResetLifecycle();
+            }
+            return;
         }
 
         if (!m_fields->captureEnabled) return;
@@ -648,7 +704,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             this->m_player2,
             this->m_objectLayer
         );
-        m_fields->fleet.synchronize(
+        m_fields->fleet.track(
             m_fields->recorder.activeElapsedSeconds(),
             this->getCurrentPercent(),
             !m_fields->levelContext.platformer
@@ -701,31 +757,29 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
                 m_fields->deathOverlay.refresh(deaths);
                 m_fields->heatmapOverlay.refresh(deaths);
             }
+
+            if (!m_fields->confirmedDeath) {
+                m_fields->confirmedDeath = true;
+                m_fields->captureEnabled = false;
+
+                // All selected historical ghosts enter the same continuation
+                // phase from the exact shared death anchor. Role never affects
+                // timing; it only affects color/trail/opacity presentation.
+                m_fields->fleet.beginContinuation(
+                    recorder.activeElapsedSeconds(),
+                    candidate.progressPercent,
+                    !m_fields->levelContext.platformer
+                );
+            }
         }
     }
 
     void resetLevel() {
-        closeReplayStudioForLifecycle();
-        m_fields->fleet.stop();
-        finalizeActiveAttempt(dash_echo::AttemptEndReason::Reset);
-
-        PlayLayer::resetLevel();
-
-        m_fields->captureEnabled = true;
-        ensureCurrentArchiveContext();
-        applyEchoDashSettings(true);
-        startNewAttempt();
-        m_fields->fleet.rebuild(m_fields->archive);
-        m_fields->fleetNeedsRebuild = false;
-        m_fields->fleet.synchronize(
-            m_fields->recorder.activeElapsedSeconds(),
-            this->getCurrentPercent(),
-            !m_fields->levelContext.platformer
-        );
-        m_fields->deathOverlay.refresh(m_fields->deaths);
-        m_fields->heatmapOverlay.refresh(m_fields->deaths);
-        updateReplayTruthContext();
-        if (m_fields->replayControls) m_fields->replayControls->refresh();
+        if (m_fields->fleet.isContinuing()) {
+            m_fields->deferredResetRequested = true;
+            return;
+        }
+        performResetLifecycle();
     }
 
     void levelComplete() {
