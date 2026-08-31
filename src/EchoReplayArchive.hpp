@@ -32,13 +32,15 @@ struct ReplayArchiveStats {
     float bestRecordedProgress = 0.0f;
     std::uint64_t revision = 0;
     bool dirty = false;
+    bool recoveredFromBackup = false;
+    std::size_t quarantinedReplayCount = 0;
 };
 
 class EchoReplayArchive final {
 public:
     static constexpr std::uint32_t kSchemaVersion = 1;
 
-    // v1.1.1 treats every finalized run as archive-worthy. These are safety
+    // v1.1.2 treats every finalized run as archive-worthy. These are safety
     // ceilings, not a normal rolling-history policy; ordinary eviction is
     // driven by the explicit user retention / disk-budget settings.
     static constexpr std::size_t kMaxSummaries = 100'000;
@@ -86,12 +88,41 @@ public:
     [[nodiscard]] static std::uint64_t stableNameHash(std::string const& text);
 
 private:
+    struct LoadCandidate {
+        std::deque<AttemptHistoryEntry> summaries;
+        std::deque<AttemptRecord> replays;
+        std::size_t quarantinedReplayCount = 0;
+        std::size_t semanticIssueCount = 0;
+    };
+
     [[nodiscard]] AttemptRecord compressReplay(AttemptRecord const& source) const;
     [[nodiscard]] std::filesystem::path archiveDirectory() const;
     [[nodiscard]] std::filesystem::path archivePath() const;
+    [[nodiscard]] std::filesystem::path backupPath() const;
     [[nodiscard]] std::size_t estimatedSerializedBytes() const;
     [[nodiscard]] std::uint64_t bestRecordedAttemptId() const;
     [[nodiscard]] float bestRecordedProgress() const;
+
+    [[nodiscard]] bool loadCandidate(
+        std::filesystem::path const& path,
+        EchoLevelContext const& context,
+        LoadCandidate& candidate
+    ) const;
+    [[nodiscard]] bool validateCandidateFile(
+        std::filesystem::path const& path,
+        EchoLevelContext const& context
+    ) const;
+
+    [[nodiscard]] static bool validatePlayerSnapshot(PlayerSnapshot const& player);
+    [[nodiscard]] static bool validateCameraSnapshot(CameraSnapshot const& camera);
+    [[nodiscard]] static bool validateFrame(
+        FrameRecord const& frame,
+        std::uint64_t previousSequence,
+        double previousTime,
+        bool hasPrevious
+    );
+    [[nodiscard]] static bool validateReplay(AttemptRecord const& attempt);
+    [[nodiscard]] static bool validateSummary(AttemptHistoryEntry const& summary);
 
     void trimSummaries();
     void trimReplays();
@@ -106,6 +137,8 @@ private:
     std::uint64_t m_revision = 0;
     bool m_loaded = false;
     bool m_dirty = false;
+    bool m_recoveredFromBackup = false;
+    std::size_t m_quarantinedReplayCount = 0;
 };
 
 } // namespace dash_echo
