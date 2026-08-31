@@ -152,12 +152,37 @@ class EchoDashV112Contract(unittest.TestCase):
             r"(?s)validateReplay\(attempt\).*?replays\.push_back.*?else.*?quarantinedReplayCount",
         )
 
+    def test_archive_ingest_validates_compressed_replay_before_mutation(self):
+        cpp = self.read("src/EchoReplayArchive.cpp")
+        ingest = re.search(
+            r"bool EchoReplayArchive::ingest\(.*?\)\s*\{(?P<body>.*?)\n}\n\nAttemptRecord const\* EchoReplayArchive::replayById",
+            cpp,
+            re.S,
+        )
+        self.assertIsNotNone(ingest)
+        body = ingest.group("body")
+
+        compressed = body.find("auto compressed = compressReplay(attempt)")
+        validated = body.find("validateReplay(compressed)")
+        summary_mutation = body.find("m_summaries.push_back(summary)")
+        replay_mutation = body.find("m_replays.push_back")
+
+        self.assertGreaterEqual(compressed, 0)
+        self.assertGreaterEqual(validated, 0)
+        self.assertGreaterEqual(summary_mutation, 0)
+        self.assertGreaterEqual(replay_mutation, 0)
+        self.assertLess(compressed, summary_mutation)
+        self.assertLess(validated, summary_mutation)
+        self.assertLess(summary_mutation, replay_mutation)
+
     def test_release_surfaces_are_all_v112(self):
         main = self.read("src/main.cpp")
         workflow = self.read(".github/workflows/build-v1.yml")
 
         self.assertRegex(main, r'kReleaseVersion\s*=\s*"v1\.1\.2"')
         self.assertIn("ECHO_DASH 1.1.2 |", main)
+        self.assertIn("recoveredFromBackup", main)
+        self.assertIn("quarantinedReplayCount", main)
         self.assertIn("name: ECHO_DASH v1.1.2 Build", workflow)
         self.assertIn("Run v1.1.2 contract regression tests", workflow)
         self.assertIn("ECHO-DASH-v1.1.2-compiler-evidence", workflow)
