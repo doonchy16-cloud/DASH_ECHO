@@ -56,6 +56,10 @@ class EchoDashV111Contract(unittest.TestCase):
         self.assertIn("progressAlignmentEnabled", fleet_cpp)
         self.assertIn("timeForProgress", fleet_cpp)
         self.assertRegex(
+            fleet_cpp,
+            r"slot\.role == GhostRole::BestRecorded\s*\|\|\s*slot\.role == GhostRole::LastAndBest",
+        )
+        self.assertRegex(
             main,
             r"fleet\.synchronize\(\s*m_fields->recorder\.activeElapsedSeconds\(\),\s*this->getCurrentPercent\(\)",
         )
