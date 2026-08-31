@@ -451,7 +451,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
 
                 restoreActiveViewportAfterStudio();
                 if (m_fields->recorder.hasActiveAttempt()) {
-                    m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
+                    m_fields->fleet.synchronize(
+                        m_fields->recorder.activeElapsedSeconds(),
+                        this->getCurrentPercent(),
+                        !m_fields->levelContext.platformer
+                    );
                 }
             }
         );
@@ -589,7 +593,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             m_fields->fleet.rebuild(m_fields->archive);
             m_fields->fleetNeedsRebuild = false;
             if (m_fields->recorder.hasActiveAttempt()) {
-                m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
+                m_fields->fleet.synchronize(
+                    m_fields->recorder.activeElapsedSeconds(),
+                    this->getCurrentPercent(),
+                    !m_fields->levelContext.platformer
+                );
             }
         }
     }
@@ -640,7 +648,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
             this->m_player2,
             this->m_objectLayer
         );
-        m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
+        m_fields->fleet.synchronize(
+            m_fields->recorder.activeElapsedSeconds(),
+            this->getCurrentPercent(),
+            !m_fields->levelContext.platformer
+        );
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* object) {
@@ -705,7 +717,11 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         startNewAttempt();
         m_fields->fleet.rebuild(m_fields->archive);
         m_fields->fleetNeedsRebuild = false;
-        m_fields->fleet.synchronize(m_fields->recorder.activeElapsedSeconds());
+        m_fields->fleet.synchronize(
+            m_fields->recorder.activeElapsedSeconds(),
+            this->getCurrentPercent(),
+            !m_fields->levelContext.platformer
+        );
         m_fields->deathOverlay.refresh(m_fields->deaths);
         m_fields->heatmapOverlay.refresh(m_fields->deaths);
         updateReplayTruthContext();
