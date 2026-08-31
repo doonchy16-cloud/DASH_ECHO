@@ -1,3 +1,18 @@
+# v1.1.2
+
+## Runtime Reliability Hardening
+
+- Retain the previous validated replay archive generation as a persistent `.bak` known-good backup.
+- Recover automatically from the retained backup when the primary archive cannot be trusted.
+- Validate replay timestamps, frame sequence, progress, player transforms, and camera transforms before granting playback authority.
+- Quarantine structurally readable but semantically invalid replay records without poisoning unrelated valid replays.
+- Reject duplicate replay/summary identities as independent authority.
+- Expose backup-recovery and replay-quarantine telemetry through archive stats/diagnostics.
+- Preserve Replay Studio settings polling while Studio is open.
+- Preserve the one canonical role-agnostic Unified Ghost Engine and its post-death continuation/reset invariants.
+
+Source/build/package/runtime verification remain separate gates.
+
 # v1.1.1
 
 ## Runtime UX & Persistence Repair
