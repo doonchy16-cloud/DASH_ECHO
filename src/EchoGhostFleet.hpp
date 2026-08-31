@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EchoGhost.hpp"
+#include "EchoGhostPlaybackEngine.hpp"
 #include "EchoReplayArchive.hpp"
 
 #include <cstddef>
@@ -66,12 +67,24 @@ public:
     // only at attempt/lifecycle boundaries after fleet.stop(), then rebuild()
     // reacquires stable pointers.
     void rebuild(EchoReplayArchive const& archive);
-    void synchronize(double timeSeconds);
-    void synchronize(
-        double timeSeconds,
+
+    // Every selected ghost is resolved by this one shared playback engine.
+    // GhostRole is presentation-only and never participates in these APIs.
+    void track(
+        double liveElapsedSeconds,
         float progressPercent,
-        bool progressAlignmentEnabled
+        bool progressAuthority
     );
+    bool beginContinuation(
+        double liveElapsedSeconds,
+        float progressPercent,
+        bool progressAuthority
+    );
+    void advanceContinuation(double dt);
+
+    [[nodiscard]] bool isContinuing() const;
+    [[nodiscard]] bool continuationComplete() const;
+
     void stop();
     void hide();
 
@@ -97,15 +110,9 @@ private:
         std::uint64_t latestAttemptId,
         std::uint64_t bestAttemptId
     );
+    void renderFromPlaybackEngine();
     void rebuildPriorityTrails();
     void drawTrailForSlot(Slot const& slot, double timeSeconds);
-
-    [[nodiscard]] static bool progressIsMonotonic(AttemptRecord const& attempt);
-    [[nodiscard]] static double timeForProgress(
-        AttemptRecord const& attempt,
-        float progressPercent,
-        double fallbackTimeSeconds
-    );
 
     [[nodiscard]] std::uint8_t opacityForRank(
         std::size_t rank,
@@ -114,6 +121,7 @@ private:
     ) const;
 
     std::vector<std::unique_ptr<Slot>> m_slots;
+    EchoGhostPlaybackEngine m_playbackEngine;
     std::size_t m_ghostLimit = kDefaultGhostLimit;
     std::size_t m_activeGhosts = 0;
     std::uint64_t m_newestAttemptId = 0;
