@@ -8,11 +8,23 @@ ECHO_DASH is a local Geometry Dash replay and training studio built around histo
 
 - Authoritative branch: **main only**
 - Development rule: **no feature branches**
-- Current development version: **v1.1.1**
+- Current development version: **v1.1.2**
 - Legacy Geode ID intentionally preserved for upgrade/save compatibility: **`doonchy.dash-echo`**
 - Tooling: **Geode CLI 3.7.4**
 - SDK/loader baseline: **Geode 5.10.1**
 - Geometry Dash Windows baseline: **2.2081**
+
+## v1.1.2 — Runtime Reliability Hardening
+
+v1.1.2 strengthens the persistence and trust boundary beneath the Unified Ghost Engine without changing ghost-role playback authority.
+
+- 💾 **Persistent known-good archive backup.** A successful save keeps the previous validated archive generation as `.bak` instead of deleting it.
+- ♻️ **Automatic backup recovery.** If the primary archive cannot be trusted, ECHO_DASH attempts the retained backup before falling back to an empty safe archive.
+- 🔬 **Semantic replay validation.** Loaded replay frames must have finite transforms/progress/timestamps, monotonic time, and strictly increasing frame sequence numbers.
+- 🛡️ **Replay quarantine.** A structurally readable but semantically invalid replay is omitted from trusted playback without poisoning unrelated valid replays in the same archive.
+- 📊 **Recovery telemetry.** Diagnostics can distinguish backup recovery and quarantined replay counts.
+- ⚙️ **Replay Studio settings refresh remains live.** Settings polling happens before the Studio early-return, so settings can refresh without closing Replay Studio.
+- 👻 **Unified Ghost Engine preserved.** Last, Best, Last+Best, and Older remain visual roles only; all historical ghosts still run through one canonical playback engine.
 
 ## v1.1.1 — Runtime UX & Persistence Repair
 
@@ -50,7 +62,9 @@ A session-best or best-recorded replay is never mislabeled as the game's real PB
 - stronger death markers visible on the first death
 - 100-bucket screen-space death heat strip
 - pause-menu Replay Studio entry and archived attempt navigation
-- existing single authoritative replay timeline preserved
+- one canonical role-agnostic historical ghost playback engine
+- post-death continuation until selected historical ghosts finish, with vanilla reset request preserved
+- existing single authoritative Replay Studio timeline preserved
 - existing Recorded / Follow / Smooth / Drone / Dynamic Zoom / Death Cam modes preserved
 
 ## Implemented foundation
@@ -66,7 +80,8 @@ A session-best or best-recorded replay is never mislabeled as the game's real PB
 - **v0.9:** cinematic replay cameras
 - **v1.0:** first real Windows build/package verification and first gameplay evidence
 - **v1.1.0:** scalability, persistence, personalization and visual-truth rebuild
-- **v1.1.1:** pause-menu UX, trail-only priority identity, first-attempt lifecycle repair, and higher all-run retention
+- **v1.1.1:** pause-menu UX, trail-only priority identity, first-attempt lifecycle repair, high all-run retention, and unified ghost playback continuation architecture
+- **v1.1.2:** retained known-good backups, automatic recovery, semantic replay validation/quarantine, and runtime reliability telemetry
 
 ## Safety boundary
 
@@ -74,4 +89,4 @@ ECHO_DASH does not intentionally modify player inputs, physics authority, collis
 
 ## Verification language
 
-Source implementation, automated contract tests, Windows build/package verification, and in-game runtime verification are separate gates. **v1.1.1 is not runtime PASS until the new package is tested in Geometry Dash, including Attempt #1 persistence, pause-menu Replay Studio entry, trail readability, 100+/256-ghost stress cases, death overlays, and cameras.**
+Source implementation, automated contract tests, Windows build/package verification, installer verification, and in-game runtime verification are separate gates. **v1.1.2 is not runtime PASS until its package is tested in Geometry Dash. The frozen v1.1.1 Unified Ghost Engine v4 candidate also remains a separate runtime baseline until tested.**
