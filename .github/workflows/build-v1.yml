@@ -1,4 +1,4 @@
-name: ECHO_DASH v1.1 Build
+name: ECHO_DASH v1.1.1 Build
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout ECHO_DASH
         uses: actions/checkout@v4
 
-      - name: Run v1.1 contract regression tests
+      - name: Run v1.1.1 contract regression tests
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -88,8 +88,23 @@ jobs:
       - name: Build Windows Release package
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          geode build --config Release
+          $logDir = Join-Path $PWD 'ci-logs'
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+          $log = Join-Path $logDir 'windows-release-build.log'
+          geode build --config Release *>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Build failed with exit code $LASTEXITCODE. Compiler transcript preserved at $log"
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload compiler evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ECHO-DASH-v1.1.1-compiler-evidence
+          path: ci-logs/windows-release-build.log
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Collect ECHO_DASH package
         shell: pwsh
@@ -112,10 +127,10 @@ jobs:
           Copy-Item -Path $packages[0].FullName -Destination $dist -Force
           Write-Host "Collected package: $($packages[0].FullName)"
 
-      - name: Upload v1.1.0 candidate
+      - name: Upload v1.1.1 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: ECHO-DASH-v1.1.0-windows
+          name: ECHO-DASH-v1.1.1-windows
           path: dist/*.geode
           if-no-files-found: error
           retention-days: 30
