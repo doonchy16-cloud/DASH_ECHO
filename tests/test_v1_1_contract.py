@@ -61,7 +61,7 @@ class EchoDashV111Contract(unittest.TestCase):
         )
         self.assertRegex(
             fleet_cpp,
-            r"bool const alignBestIdentity\s*=\s*progressAlignmentEnabled.*?carriesBestIdentity.*?slot\.progressAlignmentSafe.*?slot\.attempt\s*;",
+            r"(?s)bool const alignBestIdentity\s*=\s*progressAlignmentEnabled.*?carriesBestIdentity.*?slot\.progressAlignmentSafe.*?slot\.attempt\s*;",
         )
         self.assertRegex(
             main,
