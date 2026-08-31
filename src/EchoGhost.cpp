@@ -11,19 +11,6 @@ using namespace geode::prelude;
 
 namespace dash_echo {
 
-namespace {
-
-cocos2d::ccColor4F auraColor(ColorRGB const& color, float alpha) {
-    return cocos2d::ccColor4F {
-        static_cast<float>(color.r) / 255.0f,
-        static_cast<float>(color.g) / 255.0f,
-        static_cast<float>(color.b) / 255.0f,
-        std::clamp(alpha, 0.0f, 1.0f)
-    };
-}
-
-} // namespace
-
 bool EchoGhost::attach(cocos2d::CCNode* parent, int zOrder) {
     if (isAttached()) return true;
     if (!parent) return false;
@@ -47,21 +34,12 @@ bool EchoGhost::attach(cocos2d::CCNode* parent, int zOrder) {
     m_player1Ghost = player1Ghost;
     m_player2Ghost = player2Ghost;
     resetVisualCaches();
-    if (m_auraStyle.enabled) ensureAuraNodes();
     return true;
 }
 
 void EchoGhost::detach() {
     stop();
 
-    if (m_player1Aura) {
-        m_player1Aura->removeFromParentAndCleanup(true);
-        m_player1Aura = nullptr;
-    }
-    if (m_player2Aura) {
-        m_player2Aura->removeFromParentAndCleanup(true);
-        m_player2Aura = nullptr;
-    }
     if (m_player1Ghost) {
         m_player1Ghost->removeFromParentAndCleanup(true);
         m_player1Ghost = nullptr;
@@ -117,8 +95,8 @@ void EchoGhost::synchronize(double timeSeconds) {
 
     auto const& from = frames[m_frameIndex];
     if (m_frameIndex + 1 >= frames.size()) {
-        applySnapshot(m_player1Ghost, m_player1Aura, from.player1, m_player1Cache);
-        applySnapshot(m_player2Ghost, m_player2Aura, from.player2, m_player2Cache);
+        applySnapshot(m_player1Ghost, from.player1, m_player1Cache);
+        applySnapshot(m_player2Ghost, from.player2, m_player2Cache);
         m_lastSynchronizedTime = timeSeconds;
         return;
     }
@@ -147,23 +125,12 @@ void EchoGhost::stop() {
 void EchoGhost::hide() {
     if (m_player1Ghost) m_player1Ghost->setVisible(false);
     if (m_player2Ghost) m_player2Ghost->setVisible(false);
-    clearAuras();
 }
 
 void EchoGhost::setOpacity(std::uint8_t opacity) {
     m_opacity = opacity;
     applyOpacity(m_player1Ghost);
     applyOpacity(m_player2Ghost);
-}
-
-void EchoGhost::setAuraStyle(GhostAuraStyle const& style) {
-    m_auraStyle = style;
-    m_auraStyle.size = std::clamp(m_auraStyle.size, 0.25f, 4.0f);
-    if (m_auraStyle.enabled) {
-        ensureAuraNodes();
-    } else {
-        clearAuras();
-    }
 }
 
 bool EchoGhost::isAttached() const {
@@ -180,10 +147,6 @@ std::uint64_t EchoGhost::sourceAttemptId() const {
 
 std::uint8_t EchoGhost::opacity() const {
     return m_opacity;
-}
-
-GhostAuraStyle const& EchoGhost::auraStyle() const {
-    return m_auraStyle;
 }
 
 void EchoGhost::seekFrameCursor(double timeSeconds) {
@@ -226,7 +189,6 @@ void EchoGhost::applyInterpolatedFrame(
 ) {
     applyInterpolatedSnapshot(
         m_player1Ghost,
-        m_player1Aura,
         from.player1,
         to.player1,
         to.player1ContinuousFromPrevious,
@@ -235,7 +197,6 @@ void EchoGhost::applyInterpolatedFrame(
     );
     applyInterpolatedSnapshot(
         m_player2Ghost,
-        m_player2Aura,
         from.player2,
         to.player2,
         to.player2ContinuousFromPrevious,
@@ -246,7 +207,6 @@ void EchoGhost::applyInterpolatedFrame(
 
 void EchoGhost::applyInterpolatedSnapshot(
     SimplePlayer* ghost,
-    cocos2d::CCDrawNode* aura,
     PlayerSnapshot const& from,
     PlayerSnapshot const& to,
     bool continuous,
@@ -254,7 +214,7 @@ void EchoGhost::applyInterpolatedSnapshot(
     VisualCache& cache
 ) {
     if (!continuous) {
-        applySnapshot(ghost, aura, from, cache);
+        applySnapshot(ghost, from, cache);
         return;
     }
 
@@ -267,12 +227,11 @@ void EchoGhost::applyInterpolatedSnapshot(
     blended.color1 = interpolateColor(from.color1, to.color1, alpha);
     blended.color2 = interpolateColor(from.color2, to.color2, alpha);
 
-    applySnapshot(ghost, aura, blended, cache);
+    applySnapshot(ghost, blended, cache);
 }
 
 void EchoGhost::applySnapshot(
     SimplePlayer* ghost,
-    cocos2d::CCDrawNode* aura,
     PlayerSnapshot const& snapshot,
     VisualCache& cache
 ) {
@@ -281,10 +240,6 @@ void EchoGhost::applySnapshot(
     bool const shouldShow = snapshot.present && snapshot.visible;
     if (!shouldShow) {
         ghost->setVisible(false);
-        if (aura) {
-            aura->clear();
-            aura->setVisible(false);
-        }
         return;
     }
 
@@ -297,7 +252,6 @@ void EchoGhost::applySnapshot(
     ghost->setScaleY(snapshot.scaleY);
     applyOpacity(ghost);
     ghost->setVisible(true);
-    updateAura(aura, snapshot);
 }
 
 void EchoGhost::applyMode(SimplePlayer* ghost, PlayerMode mode, VisualCache& cache) {
@@ -351,67 +305,6 @@ void EchoGhost::applyColors(
 
 void EchoGhost::applyOpacity(SimplePlayer* ghost) {
     if (ghost) ghost->setOpacity(m_opacity);
-}
-
-void EchoGhost::ensureAuraNodes() {
-    if (!m_parent || !m_auraStyle.enabled) return;
-
-    if (!m_player1Aura) {
-        m_player1Aura = cocos2d::CCDrawNode::create();
-        if (m_player1Aura) m_parent->addChild(m_player1Aura, m_zOrder - 1);
-    }
-    if (!m_player2Aura) {
-        m_player2Aura = cocos2d::CCDrawNode::create();
-        if (m_player2Aura) m_parent->addChild(m_player2Aura, m_zOrder - 1);
-    }
-}
-
-void EchoGhost::updateAura(
-    cocos2d::CCDrawNode* aura,
-    PlayerSnapshot const& snapshot
-) {
-    if (!m_auraStyle.enabled) {
-        if (aura) {
-            aura->clear();
-            aura->setVisible(false);
-        }
-        return;
-    }
-
-    if (!aura) {
-        ensureAuraNodes();
-        aura = snapshot.present ? (snapshot.x == snapshot.x ? aura : aura) : aura;
-        // The caller will receive the created node on the next sample. Keeping
-        // allocation out of the draw path after first activation is the goal.
-        if (!aura) return;
-    }
-
-    aura->clear();
-    float const scale = std::max(std::abs(snapshot.scaleX), std::abs(snapshot.scaleY));
-    float const outerRadius = std::clamp(15.0f * m_auraStyle.size * scale, 8.0f, 34.0f);
-    cocos2d::CCPoint const position {snapshot.x, snapshot.y};
-
-    aura->drawDot(position, outerRadius, auraColor(m_auraStyle.outerColor, 0.14f));
-    aura->drawDot(position, outerRadius * 0.72f, auraColor(m_auraStyle.outerColor, 0.20f));
-    aura->drawDot(position, outerRadius * 0.48f, auraColor(m_auraStyle.outerColor, 0.16f));
-
-    if (m_auraStyle.innerAccent) {
-        aura->drawDot(position, outerRadius * 0.43f, auraColor(m_auraStyle.innerColor, 0.28f));
-        aura->drawDot(position, outerRadius * 0.27f, auraColor(m_auraStyle.innerColor, 0.18f));
-    }
-
-    aura->setVisible(true);
-}
-
-void EchoGhost::clearAuras() {
-    if (m_player1Aura) {
-        m_player1Aura->clear();
-        m_player1Aura->setVisible(false);
-    }
-    if (m_player2Aura) {
-        m_player2Aura->clear();
-        m_player2Aura->setVisible(false);
-    }
 }
 
 void EchoGhost::loadIconProfile() {
