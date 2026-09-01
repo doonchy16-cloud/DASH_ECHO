@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Establish a Geode-independent native test harness, validated configuration authority, explicit runtime state machine, and coordinator boundary before deeper persistence/UX hardening.
+**Goal:** Preserve the known-good v1.1.2 baseline, move changed hardening builds to truthful v1.1.3 development identity, then establish a Geode-independent native test harness, validated configuration authority, explicit lifecycle state machine, and coordinator boundary before deeper persistence/UX hardening.
 
-**Architecture:** First make pure ECHO_DASH policy code executable under CTest without requiring the Geode SDK. Then centralize semantic/time/settings policy, split attempt-summary preparation from mutation, and move lifecycle authority out of `main.cpp` boolean combinations into `EchoRuntimeStateMachine` + `EchoRuntimeCoordinator`. Geode hooks remain thin adapters that collect vanilla facts and execute required base calls.
+**Architecture:** First capture untouched v1.1.2 evidence. Immediately afterward, version every changed hardening build as v1.1.3 and label CI outputs as development artifacts. Then make pure ECHO_DASH policy executable under CTest without Geode, centralize semantic/time/settings policy, split attempt-summary preparation from mutation, and move lifecycle authority out of `main.cpp` boolean combinations into `EchoRuntimeStateMachine` + `EchoRuntimeCoordinator`. Geode hooks remain thin adapters that collect vanilla facts and execute required base calls.
 
 **Tech Stack:** C++23, CMake 3.21+, CTest, dependency-free native test harness, Geode 5.10.1, Geometry Dash Windows 2.2081, Python `unittest`, GitHub Actions `windows-latest`.
 
@@ -14,7 +14,9 @@
 
 - No user-facing feature additions/removals.
 - Product name remains `ECHO_DASH`; mod ID remains `doonchy.dash-echo`.
-- Repository execution remains `main` only; do not create branches/worktrees.
+- Repository execution remains `main` only; do not create branches/worktrees. Work in place with small reversible task commits.
+- Untouched v1.1.2 evidence must be recorded before source/package version identity changes.
+- Once hardening source changes begin, all built packages identify as `v1.1.3`; pre-release CI artifacts are explicitly named `hardening-dev` and include the source SHA.
 - Exactly one `EchoGhostPlaybackEngine` remains ghost timing authority; `GhostRole` stays presentation-only.
 - Recorder sample-rate range remains 30-240 Hz. Capture-policy changes apply to the next attempt, never silently mid-attempt.
 - This plan does not introduce the journal/snapshot store (Plan 02), ghost/Replay Studio redesign (Plan 03), diagnostic authority (Plan 04), or release installer (Plan 05).
@@ -26,12 +28,12 @@
 ## File Structure
 
 **Create:**
-- `src/EchoCoreTypes.hpp`
-- `src/EchoTimePolicy.hpp/.cpp`
-- `src/EchoSettings.hpp/.cpp`
-- `src/EchoSettingsGeode.hpp/.cpp`
-- `src/EchoRuntimeState.hpp/.cpp`
-- `src/EchoRuntimeCoordinator.hpp/.cpp`
+- `src/EchoCoreTypes.hpp` — selective semantic value wrappers.
+- `src/EchoTimePolicy.hpp/.cpp` — one defensive delta-time policy.
+- `src/EchoSettings.hpp/.cpp` — pure raw/normalized settings and typed diffs.
+- `src/EchoSettingsGeode.hpp/.cpp` — the only direct Geode setting-read boundary.
+- `src/EchoRuntimeState.hpp/.cpp` — pure lifecycle state machine.
+- `src/EchoRuntimeCoordinator.hpp/.cpp` — ECHO_DASH lifecycle orchestration authority.
 - `tests/cpp/TestHarness.hpp`
 - `tests/cpp/test_main.cpp`
 - `tests/cpp/test_current_invariants.cpp`
@@ -44,14 +46,84 @@
 **Modify:**
 - `CMakeLists.txt`
 - `.github/workflows/build-v1.yml`
-- `src/EchoAttemptHistory.hpp/.cpp`
-- `src/main.cpp`
 - `mod.json`
+- `src/main.cpp`
+- `src/EchoGhostPlaybackEngine.cpp`
+- `src/EchoAttemptHistory.hpp/.cpp`
 - `tests/test_v1_1_contract.py`
+- `tests/test_release_assets.py` only if version-aware assertions require it.
 
 ---
 
-### Task 1: Add a genuinely Geode-independent native core test mode
+### Task 1: Preserve untouched v1.1.2 evidence, then establish truthful v1.1.3 hardening-development identity
+
+**Files:**
+- Modify after baseline evidence: `mod.json`
+- Modify after baseline evidence: `CMakeLists.txt`
+- Modify after baseline evidence: `src/main.cpp`
+- Modify after baseline evidence: `.github/workflows/build-v1.yml`
+- Modify after baseline evidence: `tests/test_v1_1_contract.py`
+
+**Interfaces:**
+- Stable rollback baseline remains the previously certified v1.1.2 package/source evidence.
+- All subsequent hardening source uses visible/runtime version `v1.1.3`.
+- Development CI artifact names use:
+
+```text
+ECHO-DASH-v1.1.3-hardening-dev-${GITHUB_SHA}-compiler-evidence
+ECHO-DASH-v1.1.3-hardening-dev-${GITHUB_SHA}-windows
+```
+
+No development artifact is called a release candidate before Plan 05.
+
+- [ ] **Step 1: Capture fresh untouched baseline source tests before any version edit**
+
+```powershell
+python -m unittest tests.test_v1_1_contract tests.test_release_assets -v
+```
+
+Expected: current v1.1.2 contracts terminal GREEN. Record source SHA and the terminal Windows workflow run for that exact source. If the baseline itself fails, stop this plan and repair/investigate the baseline rather than mixing that defect into hardening.
+
+- [ ] **Step 2: Change version contract first and prove RED**
+
+Update version assertions to require:
+
+```python
+self.assertEqual(metadata["version"], "v1.1.3")
+self.assertIn("VERSION 1.1.3", self.read("CMakeLists.txt"))
+self.assertRegex(main, r'kReleaseVersion\s*=\s*"v1\.1\.3"')
+```
+
+Also require workflow development artifact names to contain `v1.1.3-hardening-dev` and `${{ github.sha }}`. Run the Python suite; expected FAIL while production surfaces still report v1.1.2.
+
+- [ ] **Step 3: Update all changed-build identity surfaces together**
+
+Set:
+
+```text
+mod.json version = v1.1.3
+CMake project VERSION = 1.1.3
+src/main.cpp kReleaseVersion = v1.1.3
+workflow display name = ECHO_DASH v1.1.3 Hardening Development Build
+workflow dev artifact names = v1.1.3-hardening-dev-${{ github.sha }}-...
+```
+
+Do not change mod ID, Geode target, GD target, icon, or product name.
+
+- [ ] **Step 4: Prove GREEN and commit**
+
+```powershell
+python -m unittest tests.test_v1_1_contract tests.test_release_assets -v
+```
+
+```bash
+git add mod.json CMakeLists.txt src/main.cpp .github/workflows/build-v1.yml tests/test_v1_1_contract.py tests/test_release_assets.py
+git commit -m "chore: start ECHO_DASH v1.1.3 hardening development"
+```
+
+---
+
+### Task 2: Add a genuinely Geode-independent native core test mode
 
 **Files:**
 - Create: `tests/cpp/TestHarness.hpp`
@@ -60,9 +132,9 @@
 - Modify: `CMakeLists.txt`
 - Modify: `.github/workflows/build-v1.yml`
 
-**Interface:** CMake option `ECHO_DASH_BUILD_CORE_TESTS=ON` means **core-tests-only** and returns from the root CMake file before any Geode SDK check/add_subdirectory. Normal Geode builds leave it OFF and remain unchanged.
+**Interface:** `ECHO_DASH_BUILD_CORE_TESTS=ON` means core-tests-only. Root CMake returns before any Geode SDK lookup/add_subdirectory. Normal Geode builds leave it OFF and remain unchanged.
 
-- [ ] **Step 1: Create the tiny dependency-free harness**
+- [ ] **Step 1: Create the dependency-free harness**
 
 `tests/cpp/TestHarness.hpp`:
 
@@ -89,9 +161,9 @@ inline void check(bool ok, char const* expr, char const* file, int line) {
 #define ECHO_CHECK(expr) echo_test::check(static_cast<bool>(expr), #expr, __FILE__, __LINE__)
 ```
 
-`tests/cpp/test_main.cpp` iterates the registry, prints `PASS/FAIL`, catches `std::exception`, and exits nonzero when any test fails.
+`test_main.cpp` iterates the registry, prints `PASS/FAIL`, catches `std::exception`, and returns nonzero when any test fails.
 
-`tests/cpp/test_current_invariants.cpp` initially pins:
+`test_current_invariants.cpp` initially pins:
 
 ```cpp
 #include "TestHarness.hpp"
@@ -103,17 +175,15 @@ ECHO_TEST(current_recorder_limits_are_preserved) {
 }
 ```
 
-- [ ] **Step 2: Prove the target is absent before the CMake change**
+- [ ] **Step 2: Prove target is absent before CMake change**
 
 ```powershell
 cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
 ```
 
-Expected before implementation: configure fails or does not create `EchoDashCoreTests` because the current root project has no core-only path.
+Expected before implementation: configure fails or does not create `EchoDashCoreTests`.
 
-- [ ] **Step 3: Restructure the root CMake entry without changing normal Geode behavior**
-
-Immediately after `cmake_minimum_required`/C++ standard setup:
+- [ ] **Step 3: Add core-only CMake path before Geode lookup**
 
 ```cmake
 option(ECHO_DASH_BUILD_CORE_TESTS "Build dependency-free ECHO_DASH core tests only" OFF)
@@ -130,45 +200,30 @@ if (ECHO_DASH_BUILD_CORE_TESTS)
     add_test(NAME EchoDashCoreTests COMMAND EchoDashCoreTests)
     return()
 endif()
-
-project(EchoDash VERSION 1.1.2)
 ```
 
-Only after that `return()` does normal source glob/library creation, `GEODE_SDK` validation, Geode subdirectory, and `setup_geode_mod` execute.
+The normal project statement after this path remains `project(EchoDash VERSION 1.1.3)`.
 
-- [ ] **Step 4: Prove GREEN without `GEODE_SDK`**
-
-Start a shell/session where `GEODE_SDK` is unset and run:
+- [ ] **Step 4: Prove GREEN with `GEODE_SDK` unset**
 
 ```powershell
+Remove-Item Env:GEODE_SDK -ErrorAction SilentlyContinue
 cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
 cmake --build build-core-tests --config Release --target EchoDashCoreTests
 ctest --test-dir build-core-tests -C Release --output-on-failure
 ```
 
-Expected: one native test executable, 1/1 PASS, no Geode SDK lookup.
+Expected: 1/1 PASS, no Geode SDK lookup.
 
-- [ ] **Step 5: Add the same native-test stage before SDK installation in CI**
+- [ ] **Step 5: Put native tests before SDK installation in CI**
 
-```yaml
-      - name: Run ECHO_DASH native core tests
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
-          cmake --build build-core-tests --config Release --target EchoDashCoreTests
-          ctest --test-dir build-core-tests -C Release --output-on-failure
-```
+Add a workflow step that runs the same configure/build/CTest commands before pinned Geode SDK installation.
 
-- [ ] **Step 6: Run existing Python contracts**
+- [ ] **Step 6: Run Python regressions and commit**
 
 ```powershell
-python -m unittest tests.test_v1_1_contract tests.test_release_assets -v
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
-
-Expected: all current tests PASS.
-
-- [ ] **Step 7: Commit**
 
 ```bash
 git add CMakeLists.txt .github/workflows/build-v1.yml tests/cpp
@@ -177,7 +232,7 @@ git commit -m "test: add native ECHO_DASH core harness"
 
 ---
 
-### Task 2: Add selective semantic types and one delta-time policy
+### Task 3: Add selective semantic types and one delta-time policy
 
 **Files:**
 - Create: `src/EchoCoreTypes.hpp`
@@ -201,19 +256,17 @@ struct NormalizedCursor { float value = 0.0f; bool operator==(NormalizedCursor c
 
 - [ ] **Step 1: Add failing type/time tests**
 
-Assert `AttemptId` is not implicitly convertible to `FrameSequence`; finite positive values pass; negative/NaN/infinity become zero; a 1-second spike clamps to 0.25.
+Assert `AttemptId` is not implicitly convertible to `FrameSequence`; finite positive values pass; negative/NaN/infinity become zero; 1.0 seconds clamps to 0.25; invalid/nonpositive maximum yields zero.
 
-- [ ] **Step 2: Add the source files to the core-only target and prove RED**
-
-Expected compile failure before the interfaces exist.
+- [ ] **Step 2: Add new pure sources/tests to core target and prove RED**
 
 - [ ] **Step 3: Implement wrappers and `sanitizeDeltaSeconds`**
 
-Use `std::isfinite` and `std::clamp`; invalid/nonpositive maximum returns zero.
+Use `std::isfinite` and bounded comparison; avoid duplicated policy.
 
-- [ ] **Step 4: Replace duplicated defensive `dt` sanitation in `main.cpp` and `EchoGhostPlaybackEngine.cpp`**
+- [ ] **Step 4: Replace duplicated defensive dt sanitation in `main.cpp` and `EchoGhostPlaybackEngine.cpp`**
 
-Do not alter semantic clocks beyond using one defensive policy.
+Do not change semantic clocks beyond using the shared defensive rule.
 
 - [ ] **Step 5: Prove GREEN and commit**
 
@@ -224,7 +277,7 @@ git commit -m "refactor: centralize ECHO_DASH core time policy"
 
 ---
 
-### Task 3: Build one immutable validated settings authority
+### Task 4: Build one immutable validated settings authority
 
 **Files:**
 - Create: `src/EchoSettings.hpp/.cpp`
@@ -238,6 +291,95 @@ git commit -m "refactor: centralize ECHO_DASH core time policy"
 ```cpp
 enum class VisualProfile : std::uint8_t { Clean, Competitive, Multiverse, Chaos, Custom };
 enum class RenderingQuality : std::uint8_t { Auto, Full, Balanced, Performance };
+enum class ReplayCameraSetting : std::uint8_t { Recorded, Follow, Smooth, Drone, DynamicZoom, DeathCam };
+
+struct RawEchoSettings {
+    std::int64_t ghostCount = 16;
+    std::string visualProfile = "Multiverse";
+    std::int64_t olderOpacityMin = 36;
+    std::int64_t olderOpacityMax = 104;
+    double ageFadeStrength = 1.0;
+    bool priorityXray = true;
+    bool lastEnabled = true;
+    ColorRGB lastColor {74, 163, 255};
+    std::int64_t lastOpacity = 190;
+    bool lastTrail = true;
+    bool bestEnabled = true;
+    ColorRGB bestColor {255, 213, 74};
+    std::int64_t bestOpacity = 220;
+    bool bestTrail = true;
+    double trailSeconds = 0.55;
+    double trailWidth = 1.8;
+    std::int64_t trailOpacity = 170;
+    bool deathMarkers = true;
+    double deathMarkerScale = 1.0;
+    bool deathLabels = true;
+    bool deathXray = true;
+    bool heatStrip = true;
+    std::int64_t heatStripOpacity = 170;
+    std::string defaultPlaybackRate = "1.00";
+    std::string defaultCameraMode = "Recorded";
+    std::int64_t recorderSampleRate = 120;
+    std::int64_t replayRetention = 10'000;
+    std::int64_t diskBudgetMb = 2'048;
+    std::string renderingQuality = "Auto";
+    bool diagnostics = false;
+};
+
+struct GhostSettingsSnapshot {
+    std::size_t requestedCount = 16;
+    std::size_t effectiveCount = 16;
+    VisualProfile profile = VisualProfile::Multiverse;
+    std::uint8_t olderOpacityMin = 36;
+    std::uint8_t olderOpacityMax = 104;
+    float ageFadeStrength = 1.0f;
+    bool priorityXray = true;
+    bool lastEnabled = true;
+    ColorRGB lastColor {74, 163, 255};
+    std::uint8_t lastOpacity = 190;
+    bool lastTrail = true;
+    bool bestEnabled = true;
+    ColorRGB bestColor {255, 213, 74};
+    std::uint8_t bestOpacity = 220;
+    bool bestTrail = true;
+    float trailSeconds = 0.55f;
+    float trailWidth = 1.8f;
+    std::uint8_t trailOpacity = 170;
+    bool operator==(GhostSettingsSnapshot const&) const = default;
+};
+
+struct DeathSettingsSnapshot {
+    bool markers = true;
+    float markerScale = 1.0f;
+    bool labels = true;
+    bool xray = true;
+    bool heatStrip = true;
+    std::uint8_t heatStripOpacity = 170;
+    bool operator==(DeathSettingsSnapshot const&) const = default;
+};
+
+struct ReplaySettingsSnapshot {
+    float defaultPlaybackRate = 1.0f;
+    ReplayCameraSetting defaultCamera = ReplayCameraSetting::Recorded;
+    bool operator==(ReplaySettingsSnapshot const&) const = default;
+};
+
+struct StorageSettingsSnapshot {
+    std::size_t replayRetention = 10'000;
+    std::size_t diskBudgetMb = 2'048;
+    bool operator==(StorageSettingsSnapshot const&) const = default;
+};
+
+struct EchoSettingsSnapshot {
+    GhostSettingsSnapshot ghosts;
+    DeathSettingsSnapshot deaths;
+    ReplaySettingsSnapshot replay;
+    StorageSettingsSnapshot storage;
+    double recorderSampleRateHz = 120.0;
+    RenderingQuality renderingQuality = RenderingQuality::Auto;
+    bool diagnostics = false;
+    bool operator==(EchoSettingsSnapshot const&) const = default;
+};
 
 struct EchoSettingsDiff {
     bool presentation = false;
@@ -248,64 +390,40 @@ struct EchoSettingsDiff {
     bool diagnostics = false;
 };
 
-struct RawEchoSettings;       // one field for every non-title mod.json setting
-struct EchoSettingsSnapshot; // normalized effective values grouped by subsystem
-
 [[nodiscard]] EchoSettingsSnapshot normalizeEchoSettings(RawEchoSettings const& raw);
-[[nodiscard]] EchoSettingsDiff diffEchoSettings(
-    EchoSettingsSnapshot const& oldValue,
-    EchoSettingsSnapshot const& newValue
-);
+[[nodiscard]] EchoSettingsDiff diffEchoSettings(EchoSettingsSnapshot const& oldValue, EchoSettingsSnapshot const& newValue);
 [[nodiscard]] RawEchoSettings readGeodeEchoSettings();
 ```
 
-The snapshot must represent every current non-title setting: ghost/profile/fades/xray, Last, Best, trails, death/heat, replay defaults, sample rate, replay retention, disk budget, Rendering Quality, diagnostics.
+`EchoSettingsGeode.cpp` converts Geode `ccColor3B` values to `ColorRGB` and is the only file that directly reads `Mod::get()->getSettingValue`.
 
 - [ ] **Step 1: Write normalization/property tests first**
 
-Representative assertions:
-
-```text
-requested ghost 999 -> 256
-Competitive effective ghost count -> min(requested,8)
-opacity -10/900 -> 0/255
-NaN age fade -> current default 1.0
-sample rate 999 -> 240
-retention 1 -> 256
-disk 99999 -> 8192
-unknown enum string -> current documented default
-Rendering Quality Performance decodes exactly
-```
+Assert: requested ghost 999 -> 256; Competitive effective count -> min(requested,8); opacity -10/900 -> 0/255; NaN age fade -> 1.0; sample rate 999 -> 240; retention 1 -> 256; disk 99999 -> 8192; unknown profile/rate/camera/quality -> current documented default; Performance decodes exactly.
 
 - [ ] **Step 2: Write diff-classification tests**
 
 Sample rate only -> `recorderPolicy`; ghost count/profile -> `fleetStructure`; colors/trails/death/quality -> `presentation`; retention/disk -> `persistencePolicy`; replay speed/camera -> `replayDefaults`; diagnostics toggle -> `diagnostics`.
 
-- [ ] **Step 3: Prove RED, then implement pure normalization/diff**
+- [ ] **Step 3: Prove RED, implement pure normalization/diff, prove GREEN**
 
-Non-finite floating settings resolve to the existing default before range clamp. Profile caps remain Clean=2, Competitive=8, Multiverse=64, Chaos/Custom=256.
+Non-finite floating settings resolve to existing defaults before range clamp. Profile caps remain Clean=2, Competitive=8, Multiverse=64, Chaos/Custom=256.
 
-- [ ] **Step 4: Implement `EchoSettingsGeode.cpp` as the only direct Geode setting-read boundary**
+- [ ] **Step 4: Implement Geode adapter and remove direct setting reads from `main.cpp`**
 
-It reads exact existing `mod.json` keys into `RawEchoSettings`; it does not normalize.
+The adapter reads exact existing `mod.json` keys; it does not normalize. Main stores requested/applied snapshots + revision and compares snapshots instead of building a 33-field formatted string.
 
-- [ ] **Step 5: Replace `settingsFingerprint()` and helper parsing in `main.cpp`**
+- [ ] **Step 5: Prove recorder-policy boundary**
 
-Store requested/applied snapshots plus revision. Existing 0.5-second polling may remain in this plan, but it compares normalized snapshots rather than formatting a 33-field string. Delete `profileGhostCap`, `playbackRateFromSetting`, `cameraModeFromSetting`, and direct `getSettingValue` calls from `main.cpp` once migrated.
+A sample-rate change during an active attempt updates requested settings but does not call `recorder.setCaptureSampleRate`. The next attempt applies the requested sample rate immediately before `beginAttempt()`.
 
-- [ ] **Step 6: Prove recorder-policy boundary**
-
-Do not call `recorder.setCaptureSampleRate` when a sample-rate setting changes during an active attempt. Apply the requested capture value immediately before the next `beginAttempt()`.
-
-- [ ] **Step 7: Source audit and GREEN**
+- [ ] **Step 6: Source audit and commit**
 
 ```powershell
 Select-String -Path src\*.cpp -Pattern 'getSettingValue<'
 ```
 
 Expected: production setting reads only in `EchoSettingsGeode.cpp`.
-
-- [ ] **Step 8: Commit**
 
 ```bash
 git add src/EchoSettings* src/main.cpp tests/cpp/test_settings.cpp CMakeLists.txt
@@ -314,7 +432,7 @@ git commit -m "refactor: centralize validated ECHO_DASH settings"
 
 ---
 
-### Task 4: Introduce the pure runtime state machine
+### Task 5: Introduce the pure runtime state machine, including death-without-continuation ordering
 
 **Files:**
 - Create: `src/EchoRuntimeState.hpp/.cpp`
@@ -325,17 +443,35 @@ git commit -m "refactor: centralize validated ECHO_DASH settings"
 
 ```cpp
 enum class RuntimeState : std::uint8_t {
-    Initializing, Playing, ReplayStudio, DeathContinuation,
-    ResetPending, Resetting, Completing, Exiting
+    Initializing,
+    Playing,
+    ReplayStudio,
+    DeathContinuation,
+    DeathAwaitingReset,
+    ResetPending,
+    Resetting,
+    Completing,
+    Exiting
 };
 
 enum class RuntimeEvent : std::uint8_t {
-    InitializationComplete, OpenStudio, CloseStudio, ConfirmDeath,
-    RequestReset, ContinuationComplete, ResetExecuted,
-    CompleteLevel, ExitLevel
+    InitializationComplete,
+    OpenStudio,
+    CloseStudio,
+    ConfirmDeathWithContinuation,
+    ConfirmDeathWithoutContinuation,
+    RequestReset,
+    ContinuationComplete,
+    ResetExecuted,
+    CompleteLevel,
+    ExitLevel
 };
 
-struct TransitionResult { RuntimeState from; RuntimeState to; bool accepted = false; };
+struct TransitionResult {
+    RuntimeState from = RuntimeState::Initializing;
+    RuntimeState to = RuntimeState::Initializing;
+    bool accepted = false;
+};
 
 class EchoRuntimeStateMachine final {
 public:
@@ -344,26 +480,35 @@ public:
 };
 ```
 
-- [ ] **Step 1: Write legal-transition tests**
-
-Prove:
+Binding transition table:
 
 ```text
-Initializing -> Playing
-Playing -> ReplayStudio -> Playing
-Playing -> DeathContinuation -> ResetPending -> Resetting -> Playing
-Playing -> Resetting -> Playing (manual alive reset)
-Playing -> Completing -> Exiting
-Playing -> Exiting
+Initializing + InitializationComplete -> Playing
+Playing + OpenStudio -> ReplayStudio
+ReplayStudio + CloseStudio -> Playing
+Playing + ConfirmDeathWithContinuation -> DeathContinuation
+Playing + ConfirmDeathWithoutContinuation -> DeathAwaitingReset
+DeathContinuation + ContinuationComplete -> DeathAwaitingReset
+DeathContinuation + RequestReset -> ResetPending
+DeathAwaitingReset + RequestReset -> Resetting
+ResetPending + ContinuationComplete -> Resetting
+Playing + RequestReset -> Resetting
+Resetting + ResetExecuted -> Playing
+Playing + CompleteLevel -> Completing
+Completing + ExitLevel -> Exiting
+any non-Exiting live state + ExitLevel -> Exiting
+Exiting + any event -> reject
 ```
+
+- [ ] **Step 1: Write legal transition tests including no-ghost and completion-before-reset cases**
+
+Explicitly test death with no selected ghosts, and a continuation that completes before vanilla `resetLevel()` is requested. Both must reach `DeathAwaitingReset`, then `RequestReset -> Resetting` without deadlock.
 
 - [ ] **Step 2: Write rejection-without-mutation tests**
 
-Reject ReplayStudio+ConfirmDeath, DeathContinuation+OpenStudio, Exiting+OpenStudio, Completing+InitializationComplete. State must remain unchanged.
+Reject ReplayStudio+ConfirmDeath, DeathContinuation+OpenStudio, DeathAwaitingReset+OpenStudio, Exiting+OpenStudio, Completing+InitializationComplete. State remains unchanged.
 
-- [ ] **Step 3: Prove RED, implement explicit transition table/switch, prove GREEN**
-
-`ExitLevel` transitions any non-Exiting live state to Exiting; after Exiting all events reject.
+- [ ] **Step 3: Prove RED, implement explicit switch/table, prove GREEN**
 
 - [ ] **Step 4: Commit**
 
@@ -374,7 +519,7 @@ git commit -m "refactor: add explicit ECHO_DASH runtime state machine"
 
 ---
 
-### Task 5: Split attempt-history preparation from mutation
+### Task 6: Split attempt-history preparation from mutation
 
 **Files:**
 - Modify: `src/EchoAttemptHistory.hpp/.cpp`
@@ -393,23 +538,19 @@ git commit -m "refactor: add explicit ECHO_DASH runtime state machine"
 [[nodiscard]] bool commitPreparedEntry(AttemptHistoryEntry const& entry);
 ```
 
-Keep `commitFinalizedAttempt(...)` temporarily as a compatibility wrapper calling prepare then commit until coordinator migration is complete.
+Keep `commitFinalizedAttempt(...)` temporarily as a compatibility wrapper until coordinator migration is complete.
 
-- [ ] **Step 1: Write a failing non-mutation test**
+- [ ] **Step 1: Write failing non-mutation/idempotence tests**
 
-Prepare finalized attempt #7 and assert history remains empty; commit once -> one entry; commit same entry again -> false, still one entry.
+Prepare finalized attempt #7 -> history remains empty. Commit once -> one entry. Commit duplicate -> false, still one logical entry. Preparation of active/zero-ID/nonfinite invalid input returns nullopt without mutation.
 
-- [ ] **Step 2: Add `EchoAttemptHistory.cpp` to core-test sources and prove RED**
+- [ ] **Step 2: Add history source to core test target and prove RED**
 
-- [ ] **Step 3: Extract all entry construction/validation into preparation**
+- [ ] **Step 3: Move construction/validation into preparation and all mutation into commit**
 
-Preparation requires finalized nonzero attempt, supported end reason, finite valid summary fields, and returns without touching deque/counters/revision.
+Duplicate-ID rejection may increment the existing duplicate-rejection statistic but may not alter outcome/PB counters or entries.
 
-- [ ] **Step 4: Put all history mutation into `commitPreparedEntry`**
-
-Duplicate ID rejects without changing outcome/PB counters other than the existing duplicate-rejection statistic.
-
-- [ ] **Step 5: Prove GREEN and commit**
+- [ ] **Step 4: Prove GREEN and commit**
 
 ```bash
 git add src/EchoAttemptHistory.* tests/cpp/test_attempt_history.cpp CMakeLists.txt
@@ -418,11 +559,12 @@ git commit -m "refactor: separate attempt history preparation from commit"
 
 ---
 
-### Task 6: Extract `EchoRuntimeCoordinator` and remove lifecycle boolean authority
+### Task 7: Extract `EchoRuntimeCoordinator` and remove lifecycle boolean authority
 
 **Files:**
 - Create: `src/EchoRuntimeCoordinator.hpp/.cpp`
 - Modify: `src/main.cpp`
+- Modify: `tests/cpp/test_runtime_state.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
 **Interfaces:**
@@ -436,9 +578,30 @@ struct LiveFrameContext {
     cocos2d::CCNode* viewportLayer = nullptr;
 };
 
-enum class ResetRequestResult : std::uint8_t { Deferred, ExecuteNow, Rejected };
+enum class DeathConfirmationResult : std::uint8_t {
+    Rejected,
+    AwaitingReset,
+    Continuing
+};
+
+enum class ResetRequestResult : std::uint8_t {
+    Deferred,
+    ExecuteNow,
+    Rejected
+};
+
+enum class ContinuationUpdate : std::uint8_t {
+    NoChange,
+    AwaitingReset,
+    ExecuteReset,
+    Invalid
+};
+
 enum class AttemptCommitStatus : std::uint8_t {
-    NoActiveAttempt, Committed, PendingDurability, Rejected
+    NoActiveAttempt,
+    Committed,
+    PendingDurability,
+    Rejected
 };
 
 class EchoRuntimeCoordinator final {
@@ -451,9 +614,9 @@ public:
     [[nodiscard]] RuntimeState state() const;
     [[nodiscard]] bool startAttempt(LiveFrameContext const&, double sampleRateHz);
     void captureFrame(double dt, LiveFrameContext const&);
-    [[nodiscard]] bool confirmDeath(DeathEvent const&, LiveFrameContext const&);
+    [[nodiscard]] DeathConfirmationResult confirmDeath(DeathEvent const&, LiveFrameContext const&);
     [[nodiscard]] ResetRequestResult requestReset();
-    [[nodiscard]] bool advanceContinuation(double dt);
+    [[nodiscard]] ContinuationUpdate advanceContinuation(double dt);
     [[nodiscard]] AttemptCommitStatus finalize(AttemptEndReason reason);
     [[nodiscard]] bool openReplayStudio();
     [[nodiscard]] bool closeReplayStudio();
@@ -465,61 +628,79 @@ public:
 
 - [ ] **Step 1: Add failing architecture contracts**
 
-Require coordinator files, require `main.cpp` to own/use a coordinator, and forbid direct `recorder.finalizeAttempt(` plus `history.commitFinalizedAttempt(` lifecycle policy in `main.cpp` after migration.
+Require coordinator files and state machine ownership. After migration, forbid direct `recorder.finalizeAttempt(` and `history.commitFinalizedAttempt(` lifecycle policy in `main.cpp`.
 
-- [ ] **Step 2: Implement start/capture policy**
+- [ ] **Step 2: Move start/capture policy**
 
 Start only from Playing with no active attempt; apply sample rate before `beginAttempt`; capture initial event frame. Capture only in Playing and update recorder + fleet tracking from the same `LiveFrameContext`.
 
-- [ ] **Step 3: Move terminal-death policy**
+- [ ] **Step 3: Move terminal-death policy and distinguish no-continuation explicitly**
 
-`main.cpp::destroyPlayer` still captures candidate facts, calls vanilla `PlayLayer::destroyPlayer`, then dispatches a confirmed terminal observation only when vanilla changed the player to dead. Coordinator records the death/event frame once, transitions to DeathContinuation, and calls the one fleet continuation engine. Duplicates outside Playing reject.
+`main.cpp::destroyPlayer` captures candidate facts, calls vanilla `PlayLayer::destroyPlayer`, then dispatches only a confirmed terminal observation. Coordinator records the event frame/death once. If `fleet.beginContinuation(...)` returns true, transition via `ConfirmDeathWithContinuation` and return `Continuing`; otherwise transition via `ConfirmDeathWithoutContinuation` and return `AwaitingReset`. Duplicate death outside Playing rejects.
 
 - [ ] **Step 4: Move reset/continuation policy**
 
-RequestReset from Playing -> Resetting/ExecuteNow. From DeathContinuation -> ResetPending/Deferred. `advanceContinuation` can move ResetPending -> Resetting exactly once when fleet reports complete.
+`requestReset()`:
+
+```text
+Playing -> Resetting / ExecuteNow
+DeathContinuation -> ResetPending / Deferred
+DeathAwaitingReset -> Resetting / ExecuteNow
+ResetPending -> Deferred (same pending reset)
+Exiting/Completing/ReplayStudio illegal path -> Rejected unless caller first closes Studio by legal lifecycle policy
+```
+
+`advanceContinuation()`:
+
+```text
+DeathContinuation + completion before reset request -> DeathAwaitingReset / AwaitingReset
+ResetPending + completion -> Resetting / ExecuteReset
+valid unfinished continuation -> NoChange
+invalid continuation -> Invalid (Plan 04 adds liveness containment; Plan 01 must not invent a timer)
+```
+
+Add native tests for zero ghosts and completion-before-reset.
 
 - [ ] **Step 5: Move finalization orchestration with a temporary Plan-01 persistence adapter**
 
-Until Plan 02 replaces persistence, use:
+Until Plan 02 replaces storage:
 
 ```text
-recorder finalize
+recorder.finalizeAttempt
 -> resolve finalized attempt
--> prepare history entry (non-mutating)
--> archive ingest/save through one coordinator helper
--> if logical archive acceptance succeeded: commit prepared history
--> update session best/replay/fleet revision requests
+-> prepare history entry without mutation
+-> archive.ingest(summary+compressed replay) as the logical archive acceptance boundary
+-> if logical archive acceptance succeeds, commitPreparedEntry into in-memory history projection
+-> archive.save() for current temporary durability path
+-> publish session-best/replay/fleet consequences
 ```
 
-If current `archive.save()` fails after logical ingest, return `PendingDurability` and do not pretend disk durability succeeded. Plan 02 replaces this adapter with the journal store.
+If `archive.save()` fails after logical acceptance, return `PendingDurability`; never claim disk durability. If the derived in-memory history projection rejects after archive logical acceptance, do **not** roll back/delete accepted archive data; rebuild/restore that projection from the archive summary at the next safe reconciliation point and record a warning. Plan 02 replaces this temporary adapter with journal durability.
 
-- [ ] **Step 6: Remove behavioral booleans from `main.cpp`**
+- [ ] **Step 6: Remove behavioral boolean authority from `main.cpp`**
 
-Remove `captureEnabled`, `confirmedDeath`, `deferredResetRequested`, and `replayStudioOpen` as lifecycle authorities. Orthogonal facts such as archive loaded, fleet rebuild requested, diagnostics display, and viewport-restore validity may remain.
+Remove `captureEnabled`, `confirmedDeath`, `deferredResetRequested`, and `replayStudioOpen` as lifecycle truth. Orthogonal facts such as archive readiness, fleet rebuild request, diagnostics display, and viewport-restore validity may remain.
 
 - [ ] **Step 7: Route Studio state through coordinator**
 
-Controls callback asks coordinator to open/close Studio; `main.cpp` still owns Cocos viewport/node plumbing. Failed coordinator open does not dismiss PauseLayer.
+Controls request coordinator open/close; `main.cpp` retains Cocos viewport/node plumbing. Failed coordinator open returns false and may not dismiss PauseLayer.
 
-- [ ] **Step 8: Replace obsolete regex tests with stable contracts**
+- [ ] **Step 8: Replace old regex tests with behavior/architecture contracts**
 
-Delete tests requiring old boolean names. Keep/strengthen: state machine/coordinator existence, one role-agnostic playback engine, PauseLayer-only Studio entry, no live launcher.
+Remove tests that require old boolean names. Keep one role-agnostic playback engine, pause-menu-only Studio entry, no live launcher, state-machine/coordinator existence, and no-ghost death ordering contracts.
 
-- [ ] **Step 9: Prove GREEN including terminal Windows workflow**
-
-Run native/Python tests, push task commit, then wait for the pinned Windows workflow to finish. Build success is required; runtime behavior is not yet certified by this task.
-
-- [ ] **Step 10: Commit**
+- [ ] **Step 9: Prove GREEN, run terminal Windows dev workflow, and commit**
 
 ```bash
-git add src/EchoRuntimeCoordinator.* src/main.cpp tests/test_v1_1_contract.py
+git add src/EchoRuntimeCoordinator.* src/EchoRuntimeState.* src/main.cpp tests/cpp/test_runtime_state.cpp tests/test_v1_1_contract.py
 git commit -m "refactor: centralize ECHO_DASH runtime lifecycle"
 ```
 
+Wait for the pinned Windows workflow to finish. Build success is required; runtime PASS is not claimed here.
+
 ---
 
-### Task 7: Enforce safe settings application boundaries and wire every setting
+### Task 8: Enforce safe settings application boundaries and wire every setting
 
 **Files:**
 - Modify: `src/EchoRuntimeCoordinator.hpp/.cpp`
@@ -528,33 +709,33 @@ git commit -m "refactor: centralize ECHO_DASH runtime lifecycle"
 - Modify: `tests/cpp/test_settings.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
-**Interfaces:** typed `EchoSettingsDiff` determines immediate vs deferred consequences.
+**Interfaces:** `EchoSettingsDiff` controls consequence timing.
 
 - [ ] **Step 1: Add hostile-change/property tests**
 
-Presentation-only changes never set recorder/persistence flags. Sample-rate changes only set recorder policy. Rendering Quality is decoded/applied as presentation state and never changes capture settings.
+Presentation changes never set recorder/persistence flags. Sample rate only sets recorder policy. Rendering Quality is represented as presentation policy and never changes capture settings.
 
 - [ ] **Step 2: Prove the existing Rendering Quality hole RED**
 
-Add a source contract requiring `rendering-quality` to be read in `EchoSettingsGeode.cpp` and represented in `EchoSettingsSnapshot`. It fails before wiring.
+Require `rendering-quality` to be read by `EchoSettingsGeode.cpp` and represented in `EchoSettingsSnapshot`. It fails before wiring.
 
 - [ ] **Step 3: Apply categories at legal boundaries**
 
 ```text
 presentation -> relevant renderer immediately when attached
-fleet structure -> mark rebuild; execute only in legal safe state
+fleet structure -> mark rebuild; execute only in a legal safe state
 recorder policy -> next startAttempt only
 persistence policy -> configure policy only; no heavy save from callback
 replay defaults -> session defaults
 diagnostics -> display/observer state only
-rendering quality -> requested presentation policy; Plan 03 implements cost behavior
+rendering quality -> requested presentation policy; Plan 03 implements its runtime cost policy
 ```
 
 - [ ] **Step 4: Improve wording without changing storage keys/scales**
 
-`Recorder Sample Rate` description explicitly says “Changes apply to the next attempt.” Display label `Replay Archive Run Limit` becomes `Saved Replay Limit`; JSON key remains `replay-retention`.
+`Recorder Sample Rate` description states “Changes apply to the next attempt.” Display label `Replay Archive Run Limit` becomes `Saved Replay Limit`; JSON key remains `replay-retention`.
 
-- [ ] **Step 5: Run full tests + terminal Windows build and commit**
+- [ ] **Step 5: Run full local suite + terminal Windows build and commit**
 
 ```bash
 git add src/EchoRuntimeCoordinator.* src/main.cpp mod.json tests
@@ -563,7 +744,7 @@ git commit -m "fix: make ECHO_DASH settings boundaries explicit"
 
 ---
 
-### Task 8: Plan-01 evidence gate
+### Task 9: Plan-01 evidence gate
 
 **Files:** modify only if verification finds a defect.
 
@@ -576,18 +757,18 @@ cmake --build build-core-tests --config Release --target EchoDashCoreTests
 ctest --test-dir build-core-tests -C Release --output-on-failure
 ```
 
-Expected: zero failures and no Geode SDK required by the core-only configure.
+Expected: zero failures and no Geode SDK lookup for core-only configure.
 
 - [ ] **Step 2: Source audit**
 
-Check direct `getSettingValue` reads exist only in `EchoSettingsGeode.cpp`; old behavioral booleans are gone; one fleet playback-engine member exists; `EchoGhostPlaybackEngine.*` contains no `GhostRole` dependency.
+Require direct `getSettingValue` reads only in `EchoSettingsGeode.cpp`; old lifecycle booleans gone; one fleet playback-engine member; `EchoGhostPlaybackEngine.*` contains no `GhostRole`; changed hardening surfaces all report v1.1.3.
 
-- [ ] **Step 3: Trigger full pinned Windows Release workflow and wait for terminal completion**
+- [ ] **Step 3: Trigger full pinned Windows hardening-dev workflow and wait for terminal completion**
 
-Expected terminal GREEN for Python contracts, native CTest, pinned CLI/SDK setup, MSVC Geode Release build, compiler evidence, package collection/upload.
+Expected terminal GREEN for Python contracts, native CTest, pinned CLI/SDK setup, MSVC Geode Release build, compiler evidence, and package collection/upload. Artifact names must remain development-labeled.
 
 - [ ] **Step 4: Review diff against approved scope**
 
-No Plan-02 persistence format, Plan-03 UX redesign, or new feature scope may have leaked into this foundation pass.
+No Plan-02 persistence format, Plan-03 UX redesign, or new feature scope may have leaked into foundations.
 
 - [ ] **Step 5: Record exact source SHA/workflow run ID and proceed to Plan 02 only with terminal evidence.**
