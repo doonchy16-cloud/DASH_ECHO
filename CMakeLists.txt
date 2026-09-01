@@ -2,6 +2,21 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(ECHO_DASH_BUILD_CORE_TESTS "Build dependency-free ECHO_DASH core tests only" OFF)
+
+if (ECHO_DASH_BUILD_CORE_TESTS)
+    project(EchoDashCoreTests LANGUAGES CXX)
+    enable_testing()
+    add_executable(EchoDashCoreTests
+        tests/cpp/test_main.cpp
+        tests/cpp/test_current_invariants.cpp
+    )
+    target_include_directories(EchoDashCoreTests PRIVATE src tests/cpp)
+    target_compile_features(EchoDashCoreTests PRIVATE cxx_std_23)
+    add_test(NAME EchoDashCoreTests COMMAND EchoDashCoreTests)
+    return()
+endif()
+
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "iOS" OR IOS)
     set(CMAKE_OSX_ARCHITECTURES "arm64")
 else()
