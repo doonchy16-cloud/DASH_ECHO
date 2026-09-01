@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make failures reconstructable and contained, and harden every Geometry Dash/Geode lifecycle boundary so ECHO_DASH cannot double-finalize, reenter unsafe transitions, or permanently block vanilla gameplay lifecycle.
+**Goal:** Make failures reconstructable and contained, identify the exact running build, and harden every Geometry Dash/Geode lifecycle boundary so ECHO_DASH cannot double-finalize, reenter a vanilla action, or permanently block vanilla gameplay lifecycle.
 
-**Architecture:** Add one bounded structured diagnostic authority owned by the runtime coordinator, publish state/health/performance transitions into it without hot-loop noise, and make the existing diagnostics overlay a read-only projection. Then formalize exactly-once vanilla-call contracts, add a continuation-progress watchdog independent of the PlayLayer `postUpdate` override, and adversarially test callback order/mode/context behavior.
+**Architecture:** Add one bounded structured diagnostic authority owned by the runtime coordinator and expose the exact source/build identity through it. Formalize vanilla lifecycle actions as Pending -> Executing -> Acknowledged so reentrant callbacks cannot execute a base action twice. Add an independent scheduler heartbeat watchdog that detects actual stalled continuation rather than imposing a maximum continuation duration. Centralize mode/context policy and adversarially model callback order, dual/practice/platformer behavior, teardown, and runtime liveness.
 
 **Tech Stack:** C++23, fixed-capacity native data structures, Cocos2d scheduler/Geode hooks, CTest dependency-free policy tests, Python source contracts, pinned Windows runtime certification.
 
@@ -13,76 +13,78 @@
 ## Global Constraints
 
 - Run only after Plan 03 is terminal GREEN.
-- Diagnostics remain local; no network telemetry, automatic upload, credentials, or gameplay-data reporting is introduced.
+- Diagnostics remain local; no network telemetry, automatic upload, credentials, or gameplay-data reporting.
 - Diagnostics are read-only observers; toggling them cannot alter recorder, playback, persistence, lifecycle, or attempt outcomes.
 - Geometry Dash lifecycle authority outranks optional ECHO_DASH presentation.
-- No ECHO_DASH state may indefinitely block reset, completion, pause, resume, or exit while the surrounding Cocos/Geometry Dash scheduler is still making progress.
+- No ECHO_DASH state may indefinitely block reset, completion, pause, resume, or exit while surrounding scheduler/lifecycle is making progress.
 - `Exiting` is terminal.
-- Base Geometry Dash lifecycle methods are invoked at most once for each corresponding vanilla callback/accepted deferred action.
+- Base lifecycle actions are executed at most once per accepted request; action phase is marked Executing **before** invoking the vanilla base method.
+- `DeathAwaitingReset` from Plan 01 remains a legal state for no-ghost and continuation-completed-before-reset ordering.
 - Platformer never uses classic-percent synchronization authority.
-- Practice and dual-player behavior are separately tested; no new practice/dual feature is added.
+- Practice and dual-player behavior are separately tested; no new mode feature.
+- A healthy advancing continuation is never cut short merely because it lasts a long time or one scheduler tick is delayed.
 
 ---
 
-## File Structure for This Plan
+## File Structure
 
 **Create:**
-- `src/EchoDiagnostics.hpp`
-- `src/EchoDiagnostics.cpp` — bounded structured events, health, deduplication, performance rolling metrics, read-only snapshot.
-- `src/EchoIntegrationPolicy.hpp`
-- `src/EchoIntegrationPolicy.cpp` — pure mode/context/progress-authority and callback-order helpers that do not depend on Cocos nodes.
+- `src/EchoBuildIdentity.hpp/.cpp` — exact version/source/archive/journal identity.
+- `src/EchoDiagnostics.hpp/.cpp` — bounded structured events, health, deduplication, performance metrics, read-only snapshot/self-check.
+- `src/EchoIntegrationPolicy.hpp/.cpp` — pure mode/context/lifecycle permission helpers.
+- `tests/cpp/test_build_identity.cpp`
 - `tests/cpp/test_diagnostics.cpp`
 - `tests/cpp/test_integration_policy.cpp`
 - `tests/cpp/test_runtime_callback_model.cpp`
-- `docs/runtime/ECHO_DASH_RUNTIME_CERTIFICATION_CHECKLIST_v1.1.3.md` — exact manual/runtime matrix used again by Plan 05.
+- `docs/runtime/ECHO_DASH_RUNTIME_CERTIFICATION_CHECKLIST_v1.1.3.md`
 
 **Modify:**
+- `CMakeLists.txt`
+- `.github/workflows/build-v1.yml`
 - `src/EchoRuntimeCoordinator.hpp/.cpp`
 - `src/EchoRuntimeState.hpp/.cpp`
 - `src/EchoGhostFleet.hpp/.cpp`
 - `src/EchoReplayArchive.hpp/.cpp`
 - `src/EchoReplayControls.hpp/.cpp`
+- `src/EchoRenderingQuality.hpp/.cpp`
 - `src/main.cpp`
-- `CMakeLists.txt`
 - `tests/test_v1_1_contract.py`
 
 ---
 
-### Task 1: Add bounded structured diagnostics and subsystem health
+### Task 1: Add exact build identity plus bounded structured diagnostics
 
 **Files:**
-- Create: `src/EchoDiagnostics.hpp`
-- Create: `src/EchoDiagnostics.cpp`
+- Create: `src/EchoBuildIdentity.hpp/.cpp`
+- Create: `src/EchoDiagnostics.hpp/.cpp`
+- Create: `tests/cpp/test_build_identity.cpp`
 - Create: `tests/cpp/test_diagnostics.cpp`
 - Modify: `CMakeLists.txt`
+- Modify: `.github/workflows/build-v1.yml`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
+struct EchoBuildIdentity {
+    std::string_view product;
+    std::string_view version;
+    std::string_view sourceSha;
+    std::uint32_t snapshotSchema = 2;
+    std::uint32_t journalSchema = 1;
+};
+
+[[nodiscard]] EchoBuildIdentity currentEchoBuildIdentity();
+
 enum class DiagnosticCategory : std::uint8_t {
-    Lifecycle,
-    Recorder,
-    Playback,
-    Ghost,
-    Archive,
-    Recovery,
-    UI,
-    Settings,
-    Performance,
-    Integration
+    Lifecycle, Recorder, Playback, Ghost, Archive,
+    Recovery, UI, Settings, Performance, Integration
 };
 
 enum class DiagnosticSeverity : std::uint8_t { Debug, Info, Warning, Error };
 enum class SubsystemHealth : std::uint8_t { Healthy, Degraded, Unavailable };
 enum class EchoSubsystem : std::uint8_t {
-    Runtime,
-    Recorder,
-    Archive,
-    GhostRenderer,
-    ReplayStudio,
-    DeathPresentation,
-    Diagnostics
+    Runtime, Recorder, Archive, GhostRenderer,
+    ReplayStudio, DeathPresentation, Diagnostics
 };
 
 struct DiagnosticEvent {
@@ -105,6 +107,7 @@ struct PerformanceMetricSnapshot {
 };
 
 struct EchoDiagnosticsSnapshot {
+    EchoBuildIdentity build;
     std::uint64_t newestSequence = 0;
     std::size_t eventCount = 0;
     std::array<SubsystemHealth, 7> health {};
@@ -115,7 +118,6 @@ class EchoDiagnostics final {
 public:
     static constexpr std::size_t kEventCapacity = 256;
     static constexpr std::size_t kPerformanceWindow = 240;
-
     void setSessionSeconds(double value);
     void record(DiagnosticEvent event);
     void setHealth(EchoSubsystem subsystem, SubsystemHealth health, std::uint32_t reason);
@@ -125,34 +127,42 @@ public:
 };
 ```
 
-The bounded vector returned by `recentEvents()` is created only on explicit diagnostics inspection, not in hot paths.
+- [ ] **Step 1: Write build-identity tests and prove RED**
 
-- [ ] **Step 1: Write sequence/capacity tests**
+Local core test expects product `ECHO_DASH`, version `v1.1.3`, snapshot schema 2, journal schema 1, and source SHA either `local` or 40 lowercase/uppercase hex characters.
 
-Record 300 distinct events and assert newest sequence is 300 while retained event count is exactly 256. Sequences must strictly increase from the first retained event to the last.
+- [ ] **Step 2: Inject source SHA at build configuration**
 
-- [ ] **Step 2: Write duplicate-suppression tests**
+For normal Geode builds, CMake reads `$ENV{GITHUB_SHA}`. If it matches 40 hex characters, add a private compile definition:
 
-Record the same failure signature `(category, runtimeState, attemptId, operation, result)` repeatedly without an intervening state/result change. It occupies one retained event whose `repeatCount` increments. A later recovery result creates a new event and closes the degraded health state.
+```cmake
+target_compile_definitions(${PROJECT_NAME} PRIVATE ECHO_DASH_SOURCE_SHA="${ECHO_DASH_SOURCE_SHA}")
+```
 
-- [ ] **Step 3: Write performance-window tests**
+Otherwise define `ECHO_DASH_SOURCE_SHA="local"`. Core test target uses `local`. Do not use git shell commands as hidden build authority.
 
-Feed 240 deterministic samples and verify current, arithmetic average, worst, and p95 (nearest-rank 95th percentile over the bounded window) match expected values. Feed invalid/negative values and assert they are ignored.
+- [ ] **Step 3: Write sequence/capacity/dedup tests**
 
-- [ ] **Step 4: Prove RED, implement fixed-capacity ring/metrics, prove GREEN**
+300 distinct events -> newest sequence 300, retained exactly 256, strict retained sequence ordering. Same failure signature `(category,state,attempt,operation,result)` repeats in one retained event with `repeatCount`; recovery result creates a new event/health transition.
 
-No per-frame formatted strings are stored. Diagnostic event creation uses numeric enums/IDs; human-readable formatting happens only in the overlay/log projection.
+- [ ] **Step 4: Write performance-window tests**
 
-- [ ] **Step 5: Commit**
+240 deterministic samples -> current/mean/worst/nearest-rank p95 exact. Negative/nonfinite observations ignored.
+
+- [ ] **Step 5: Prove RED, implement fixed-capacity ring/metrics, prove GREEN**
+
+No per-frame formatted strings. `recentEvents()` allocates only on explicit diagnostics inspection, not in hot path.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/EchoDiagnostics.* tests/cpp/test_diagnostics.cpp CMakeLists.txt
-git commit -m "feat: add bounded ECHO_DASH diagnostics authority"
+git add src/EchoBuildIdentity.* src/EchoDiagnostics.* tests/cpp/test_build_identity.cpp tests/cpp/test_diagnostics.cpp CMakeLists.txt .github/workflows/build-v1.yml
+git commit -m "feat: add ECHO_DASH build identity and diagnostics authority"
 ```
 
 ---
 
-### Task 2: Wire diagnostics to authoritative subsystem transitions
+### Task 2: Wire diagnostics to authoritative transitions and health
 
 **Files:**
 - Modify: `src/EchoRuntimeCoordinator.hpp/.cpp`
@@ -162,31 +172,29 @@ git commit -m "feat: add bounded ECHO_DASH diagnostics authority"
 - Modify: `src/main.cpp`
 - Modify: `tests/cpp/test_diagnostics.cpp`
 
-**Interfaces:**
-- Consumes: structured commit/maintenance states, runtime transitions, fleet frame stats, Rendering Quality effective state.
-- Produces: authoritative lifecycle/archive/recovery/settings/performance events and health transitions.
+**Interfaces:** coordinator owns/receives `EchoDiagnostics&`; diagnostics consumes numeric snapshots/results only.
 
-- [ ] **Step 1: Inject `EchoDiagnostics&` into the runtime coordinator**
+- [ ] **Step 1: Connect coordinator transitions**
 
-The coordinator records state transitions, attempt start/finalize outcomes, persistence durability transitions, Studio open/close outcomes, and illegal transition attempts. It does not record per-frame ghost updates.
+Record accepted/rejected lifecycle transitions, attempt start/finalize outcomes, Studio open/close, durability transitions, and illegal transition attempts. No per-frame ghost event spam.
 
-- [ ] **Step 2: Map archive state to health deterministically**
+- [ ] **Step 2: Map archive health deterministically**
 
-`Durable` with no pending entries -> Archive Healthy. `PendingDurability` -> Archive Degraded. Repeated/permanent store failure -> Archive Degraded with a distinct reason. Successful retry/restore -> emit recovery event and return Healthy. Unrecoverable load with gameplay continuing on an empty safe authority -> Archive Unavailable for the rejected context until a later successful durable commit proves recovery.
+Durable + no pending -> Healthy. Pending durability -> Degraded. Persistent/repeated write failure -> Degraded distinct reason. Successful retry -> Recovery event + Healthy. Unrecoverable load with empty-safe context -> Unavailable until a later durable commit proves recovery.
 
 - [ ] **Step 3: Map presentation failures independently**
 
-Fleet attach/allocation failure changes GhostRenderer health only. Replay Controls creation failure changes ReplayStudio health only. Death/heat attach failure changes DeathPresentation health only. Recorder/archive health must remain unchanged.
+Fleet allocation/attach failure affects GhostRenderer only; controls creation affects ReplayStudio only; death/heat attach affects DeathPresentation only. Recorder/archive health unchanged.
 
-- [ ] **Step 4: Feed performance aggregates without formatting**
+- [ ] **Step 4: Feed presentation metrics without formatting**
 
-The Plan-03 presentation timer calls `diagnostics.observePresentationMs()`. Diagnostics display reads rolling snapshot every 0.5 seconds; no archive or replay scan is performed to compute it.
+Plan03 timer calls `observePresentationMs`. Overlay reads aggregate at 0.5s cadence; no archive/replay scan.
 
-- [ ] **Step 5: Record requested/effective settings transitions**
+- [ ] **Step 5: Record requested/effective Rendering Quality transition once per effective change**
 
-When Rendering Quality Auto changes effective mode, record one Settings/Performance event. Do not log every Auto observation.
+Do not log every Auto observation.
 
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoRuntimeCoordinator.* src/EchoReplayArchive.* src/EchoGhostFleet.* src/EchoRenderingQuality.* src/main.cpp tests/cpp/test_diagnostics.cpp
@@ -195,7 +203,7 @@ git commit -m "feat: connect ECHO_DASH diagnostics to authority"
 
 ---
 
-### Task 3: Formalize exactly-once vanilla lifecycle actions and reentrancy containment
+### Task 3: Formalize Pending -> Executing -> Acknowledged vanilla lifecycle actions
 
 **Files:**
 - Create: `tests/cpp/test_runtime_callback_model.cpp`
@@ -205,45 +213,49 @@ git commit -m "feat: connect ECHO_DASH diagnostics to authority"
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 enum class VanillaAction : std::uint8_t { None, Reset, LevelComplete, Exit };
+enum class VanillaActionPhase : std::uint8_t { None, Pending, Executing };
 
 struct VanillaActionRequest {
     VanillaAction action = VanillaAction::None;
+    VanillaActionPhase phase = VanillaActionPhase::None;
     std::uint64_t sequence = 0;
 };
 
 [[nodiscard]] VanillaActionRequest pendingVanillaAction() const;
+[[nodiscard]] bool beginVanillaAction(std::uint64_t sequence);
 [[nodiscard]] bool acknowledgeVanillaAction(std::uint64_t sequence);
 ```
 
-Only the coordinator may create an action request; `main.cpp` consumes and acknowledges it exactly once around the required base call.
+Only coordinator creates requests. `beginVanillaAction` atomically changes matching Pending -> Executing before any base method call. Reentrant callback while Executing can observe the same request but cannot begin it again. `acknowledgeVanillaAction` clears the matching Executing request after base invocation.
 
-- [ ] **Step 1: Write callback-model tests for duplicate requests**
+- [ ] **Step 1: Write duplicate/reentrant callback model tests**
 
-Model these sequences and assert one finalization/action only:
+At minimum:
 
 ```text
 Reset, Reset
+Death(no continuation), Reset, Reset
 Death, Reset, Reset, ContinuationComplete
+Death, ContinuationComplete, Reset
 Complete, Complete
 Exit, Exit
 Death, Exit, Reset
 ```
 
-- [ ] **Step 2: Prove RED**
+Assert one attempt finalization + at most one executable vanilla action.
 
-Expected: compile FAIL before the action-request interface exists.
+- [ ] **Step 2: Write explicit reentrancy test**
 
-- [ ] **Step 3: Implement monotonic vanilla-action sequence IDs**
+Queue Reset, call `beginVanillaAction(seq)` -> true/Executing. Simulate reentrant reset callback -> no second begin/action. A second `beginVanillaAction(seq)` -> false. `acknowledge` once -> true; second acknowledge -> false.
 
-A second request for the same action while one is pending returns the existing request. Acknowledged action sequences cannot be acknowledged twice. `Exiting` rejects all later reset/Studio/start-attempt requests.
+- [ ] **Step 3: Prove RED and implement monotonic sequence/action state**
 
-- [ ] **Step 4: Refactor base calls in `main.cpp` through one helper per action**
+Second request for same action while Pending/Executing returns existing request. `Exiting` rejects later reset/Studio/start-attempt requests.
 
-Use helpers with visible base invocation:
+- [ ] **Step 4: Route base calls through one helper per action**
 
 ```cpp
 void executeVanillaReset(VanillaActionRequest request);
@@ -251,13 +263,13 @@ void executeVanillaLevelComplete(VanillaActionRequest request);
 void executeVanillaExit(VanillaActionRequest request);
 ```
 
-Each checks the expected action, calls the base method exactly once, then acknowledges the sequence. No other source path directly calls that base lifecycle method except initialization and the corresponding helper.
+Each helper verifies action, calls `beginVanillaAction(sequence)`, invokes exactly one corresponding `PlayLayer::...` base method, then acknowledges. If begin fails, it must not call base. No other ECHO_DASH lifecycle helper directly calls those base methods.
 
-- [ ] **Step 5: Add source contracts for base-call count/location**
+- [ ] **Step 5: Add source contracts for base-call locations**
 
-Python tests inspect `main.cpp` and require one explicit helper call site for each lifecycle base method; obsolete direct calls in other ECHO_DASH helpers are rejected.
+Python contracts require one explicit helper-owned base invocation per lifecycle operation and reject obsolete direct calls elsewhere.
 
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoRuntimeCoordinator.* src/EchoRuntimeState.* src/main.cpp tests/cpp/test_runtime_callback_model.cpp tests/test_v1_1_contract.py CMakeLists.txt
@@ -266,7 +278,7 @@ git commit -m "fix: make vanilla lifecycle actions exactly-once"
 
 ---
 
-### Task 4: Add continuation liveness containment with an independent heartbeat watchdog
+### Task 4: Add continuation liveness containment with independent heartbeat watchdog
 
 **Files:**
 - Modify: `src/EchoGhostFleet.hpp/.cpp`
@@ -275,7 +287,6 @@ git commit -m "fix: make vanilla lifecycle actions exactly-once"
 - Modify: `tests/cpp/test_runtime_callback_model.cpp`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 enum class ContinuationAdvanceResult : std::uint8_t {
@@ -287,55 +298,53 @@ enum class ContinuationAdvanceResult : std::uint8_t {
 [[nodiscard]] ContinuationAdvanceResult advanceContinuation(double dt);
 
 struct ContinuationWatchdog {
-    double schedulerElapsedSeconds = 0.0;
     double lastObservedContinuationSeconds = 0.0;
     double stalledSeconds = 0.0;
+    std::uint32_t stalledTicks = 0;
     bool armed = false;
 };
 ```
 
-Watchdog law after vanilla reset has been requested:
+Watchdog law only after vanilla reset is pending:
 
 ```text
-if continuation elapsed advances -> stalledSeconds = 0
-if scheduler ticks but continuation elapsed does not advance -> accumulate stalledSeconds
-if invalid playback authority -> fail over immediately
-if stalledSeconds >= 0.75 seconds -> fail over
+valid continuation elapsed advances -> stalledSeconds=0, stalledTicks=0
+scheduler ticks but continuation does not advance -> stalledSeconds += finite scheduler dt, stalledTicks++
+Invalid playback -> immediate failover
+stalledTicks >= 2 AND stalledSeconds >= 0.75s -> failover
 ```
 
-The 0.75-second rule detects absence of continuation progress; it is not a maximum allowed ghost-continuation duration.
+The two-tick predicate prevents one delayed scheduler callback from being interpreted as a deadlock. 0.75 seconds measures accumulated observed stall, not total continuation duration.
 
 - [ ] **Step 1: Write watchdog policy tests**
 
-A 10-second continuation that advances every watchdog tick must never fail over. A continuation with reset pending and no continuation progress for 0.74 seconds remains pending; at 0.75 seconds it emits exactly one reset action. `Invalid` emits the reset action immediately.
+10-second advancing continuation never fails over. No progress for 0.74s remains pending. One single 1.0s stalled callback remains pending because stalledTicks=1. Second stalled callback crossing both conditions emits exactly one Reset action. Invalid emits immediate reset.
 
 - [ ] **Step 2: Prove RED and implement `ContinuationAdvanceResult`**
 
-`EchoGhostFleet` returns Completed only when all selected active ghost attempts are complete, Progressed when valid continuation time advanced, and Invalid when shared playback state/source data is non-finite or structurally unusable.
+Completed only when all active selected attempts complete. Progressed only when valid shared continuation time increased. Invalid when shared playback/source state is nonfinite/structurally unusable.
 
-- [ ] **Step 3: Arm a Cocos scheduler watchdog only while ResetPending**
+- [ ] **Step 3: Arm Cocos scheduler watchdog only while ResetPending**
 
-`main.cpp` schedules a small callback on the PlayLayer/Cocos scheduler when coordinator enters ResetPending and unschedules it on reset execution, completion, or exit. The callback calls a coordinator watchdog method using scheduler delta; it does not perform rendering.
+Schedule a small PlayLayer callback entering ResetPending; unschedule on Resetting/completion/exit. It calls coordinator watchdog with scheduler dt and performs no rendering.
 
-- [ ] **Step 4: On liveness failover, preserve attempt data and release optional presentation before vanilla reset**
-
-Required order:
+- [ ] **Step 4: Fail over preserving data**
 
 ```text
-record Integration warning/recovery context
--> fleet.stop() / release replay references
--> preserve already-finalized/pending-durability attempt state
--> transition ResetPending -> Resetting through an explicit failover event
--> queue one VanillaAction::Reset
+record Integration warning
+-> fleet.stop/release replay references
+-> keep already finalized/pending-durability attempt authority
+-> ResetPending -> Resetting via explicit failover event
+-> queue exactly one VanillaAction::Reset
 ```
 
-No arbitrary replay/attempt deletion occurs.
+No arbitrary data deletion.
 
-- [ ] **Step 5: Add source contract that no timeout skips a healthy advancing continuation**
+- [ ] **Step 5: Add source contract against raw elapsed timeout**
 
-The watchdog condition must include a stalled/non-progressing predicate; a raw `if elapsed >= 0.75 then reset` is forbidden.
+A condition that resets solely because total continuation elapsed >= 0.75 is forbidden. Required stalled-progress/tick predicates must be present.
 
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoGhostFleet.* src/EchoRuntimeCoordinator.* src/main.cpp tests/cpp/test_runtime_callback_model.cpp tests/test_v1_1_contract.py
@@ -344,11 +353,10 @@ git commit -m "fix: guarantee death-continuation liveness"
 
 ---
 
-### Task 5: Centralize mode/context integration policy and harden teardown
+### Task 5: Centralize mode/context integration policy and teardown dominance
 
 **Files:**
-- Create: `src/EchoIntegrationPolicy.hpp`
-- Create: `src/EchoIntegrationPolicy.cpp`
+- Create: `src/EchoIntegrationPolicy.hpp/.cpp`
 - Create: `tests/cpp/test_integration_policy.cpp`
 - Modify: `src/EchoRuntimeCoordinator.hpp/.cpp`
 - Modify: `src/main.cpp`
@@ -357,7 +365,6 @@ git commit -m "fix: guarantee death-continuation liveness"
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 struct IntegrationMode {
@@ -367,39 +374,39 @@ struct IntegrationMode {
 
 [[nodiscard]] bool usesProgressAuthority(IntegrationMode mode);
 [[nodiscard]] bool mayOpenReplayStudio(RuntimeState state);
-[[nodiscard]] bool mayRebuildFleet(RuntimeState state);
+[[nodiscard]] bool mayRebuildFleet(RuntimeState state, bool archiveMutationInFlight);
 ```
 
 Rules:
 
 ```text
-usesProgressAuthority(platformer=true) = false
-usesProgressAuthority(platformer=false) = true
-mayOpenReplayStudio only in Playing
-mayRebuildFleet only in Playing and when no unsafe archive consumer transition is active
+platformer -> progress authority false
+classic -> progress authority true
+Studio may open only in Playing
+fleet may rebuild only in Playing AND archiveMutationInFlight=false
 ```
 
-- [ ] **Step 1: Write pure policy tests**
+- [ ] **Step 1: Write pure policy tests for every state/mode**
 
-Cover classic normal, classic practice, platformer normal, platformer practice, and every runtime state for Studio/fleet permissions.
+Classic normal/practice, platformer normal/practice, every RuntimeState including DeathAwaitingReset.
 
-- [ ] **Step 2: Prove RED and implement the pure policy**
+- [ ] **Step 2: Prove RED and implement pure policy**
 
-Replace repeated `!m_fields->levelContext.platformer` expressions with `usesProgressAuthority` at the integration boundary.
+Replace repeated `!context.platformer` integration expressions with `usesProgressAuthority`.
 
-- [ ] **Step 3: Make context switches explicit coordinator operations**
+- [ ] **Step 3: Make context switches explicit and preserve triggering attempt semantics**
 
-On practice/mode/context change: close Studio if needed, release fleet/replay consumers, retry pending durability/maintenance at safe boundary, load new archive context, restore death analytics, set replay archive, apply settings, start the new attempt only after state returns to Playing.
+Context transition occurs only at a legal lifecycle boundary. Existing active attempt is finalized with the actual triggering existing reason (Reset, Completed, LayerExit); do not invent a new end reason for context change. Release Studio/fleet/replay consumers, retry/detach pending durability per Plan02, load new archive context, restore analytics/session archive, apply settings, then start next attempt only after Playing.
 
 - [ ] **Step 4: Make teardown dominance explicit**
 
-On `beginExit`: unschedule watchdog, close/detach Studio idempotently, stop fleet, finalize at most once, best-effort persistence retry/maintenance, detach presentation, then queue one vanilla exit. After state Exiting, no new attempt/fleet rebuild/settings maintenance/Studio opening is accepted.
+`beginExit`: unschedule watchdog, close/detach Studio idempotently, stop fleet, finalize at most once, best-effort pending retry/maintenance, detach presentation, queue one vanilla Exit. After Exiting, reject new attempt/fleet rebuild/settings maintenance/Studio open.
 
-- [ ] **Step 5: Make attach/detach idempotence observable in tests/source contracts**
+- [ ] **Step 5: Prove attach/detach idempotence**
 
-Repeated `detach()` calls on Fleet/Replay/Death/Heat/Controls do not dereference stale parents or double-remove nodes. Missing optional nodes mark only their subsystem unavailable/degraded.
+Repeated detach on Fleet/Replay/Death/Heat/Controls is safe. Missing optional nodes affect only relevant presentation health.
 
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoIntegrationPolicy.* src/EchoRuntimeCoordinator.* src/main.cpp src/EchoReplayControls.cpp src/EchoGhostFleet.cpp tests/cpp/test_integration_policy.cpp CMakeLists.txt
@@ -408,43 +415,40 @@ git commit -m "refactor: harden Geometry Dash integration policy"
 
 ---
 
-### Task 6: Expand adversarial callback-order and dual/practice/platformer model tests
+### Task 6: Expand adversarial callback-order and mode model tests
 
 **Files:**
 - Modify: `tests/cpp/test_runtime_callback_model.cpp`
 - Modify: `tests/cpp/test_integration_policy.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
-**Interfaces:**
-- Produces: executable callback-order evidence independent of graphics rendering.
-
-- [ ] **Step 1: Add event permutation cases**
-
-At minimum:
+- [ ] **Step 1: Add event permutations**
 
 ```text
-init -> updates -> death -> reset request -> continuation complete -> reset executed
-init -> manual reset alive -> reset executed
+init -> updates -> death -> reset request -> continuation complete -> reset
+init -> updates -> death -> continuation complete -> reset request -> reset
+init -> death with no ghosts -> reset request -> reset
+init -> manual reset alive -> reset
 init -> Studio open -> Studio close -> reset
 init -> Studio open -> exit
 init -> death -> reset pending -> exit
-init -> death -> duplicate death -> duplicate reset -> continuation complete
+init -> duplicate death/reset -> completion -> one reset
 init -> level complete -> exit callback
 ```
 
-For each, assert one legal terminal/intermediate state, one finalization identity, and at most one pending vanilla action.
+Each has one legal state, one finalization identity, at most one vanilla action.
 
 - [ ] **Step 2: Add dual-player observation cases**
 
-Model P1 and P2 death observations with one attempt ID. Duplicate/non-terminal observations cannot create a second attempt finalization or second continuation anchor. Player index remains analytics metadata only.
+P1/P2 observations share one attempt ID; duplicate/non-terminal observation cannot create second finalization/continuation anchor. Player index remains analytics metadata only.
 
-- [ ] **Step 3: Add practice-mode cases**
+- [ ] **Step 3: Add practice cases**
 
-Repeated checkpoint-like death/reset sequences remain within the practice archive context; switching practice flag causes an explicit context transition rather than merging histories.
+Checkpoint-like death/reset stays practice context. Practice flag switch creates explicit context transition rather than merged history.
 
 - [ ] **Step 4: Add platformer cases**
 
-Every platformer tracking/continuation fixture asserts `progressAuthority == false`; elapsed-time behavior remains deterministic.
+Every platformer tracking/continuation fixture asserts progressAuthority=false.
 
 - [ ] **Step 5: Run CTest and commit**
 
@@ -455,7 +459,7 @@ git commit -m "test: adversarially model ECHO_DASH lifecycle callbacks"
 
 ---
 
-### Task 7: Replace the diagnostics overlay with a read-only authority snapshot
+### Task 7: Replace diagnostics overlay with read-only authority snapshot/self-check
 
 **Files:**
 - Modify: `src/main.cpp`
@@ -464,12 +468,17 @@ git commit -m "test: adversarially model ECHO_DASH lifecycle callbacks"
 - Modify: `tests/test_v1_1_contract.py`
 
 **Interfaces:**
-- Consumes: coordinator state, recorder stats, archive stats/revisions, fleet frame stats, Rendering Quality requested/effective, diagnostic health/performance snapshot.
-- Produces: existing on-screen diagnostics toggle with clearer authority-oriented text; no new UI entrypoint.
-
-- [ ] **Step 1: Add a read-only self-check result type**
 
 ```cpp
+struct EchoSelfCheckInput {
+    RuntimeState runtimeState = RuntimeState::Initializing;
+    bool recorderHasActiveAttempt = false;
+    std::uint64_t memoryRevision = 0;
+    std::uint64_t durableRevision = 0;
+    std::uint64_t snapshotRevision = 0;
+    bool diagnosticsMutationAttempted = false;
+};
+
 struct EchoSelfCheck {
     bool runtimeStateLegal = true;
     bool activeAttemptInvariant = true;
@@ -477,24 +486,26 @@ struct EchoSelfCheck {
     bool diagnosticsObserverOnly = true;
 };
 
-[[nodiscard]] EchoSelfCheck selfCheck(...) const;
+[[nodiscard]] EchoSelfCheck selfCheck(EchoSelfCheckInput const& input) const;
 ```
 
-The function accepts const snapshots/values only. It cannot call repair/mutation methods.
+- [ ] **Step 1: Write self-check tests**
 
-- [ ] **Step 2: Write tests proving diagnostics ON/OFF cannot mutate authority**
+`durableRevision <= memoryRevision`, `snapshotRevision <= durableRevision`; Playing requires active attempt unless explicit transition is in progress; diagnosticsMutationAttempted=false required. Self-check accepts values only and cannot repair.
 
-Run equivalent pure coordinator/settings/diagnostic event sequences with diagnostics display enabled/disabled; state transitions and commit decisions must match.
+- [ ] **Step 2: Prove diagnostics ON/OFF observer equivalence**
 
-- [ ] **Step 3: Format diagnostics at the existing bounded cadence**
+Equivalent coordinator/settings/event sequences with display on/off yield identical state/commit decisions.
 
-Every 0.5 seconds while enabled, show concise lines for runtime state/attempt, recorder sample rate, ghost assigned/configured/effective quality, archive memory/durable/snapshot revisions and pending/quarantine/recovery, presentation performance aggregate, and subsystem health. Do not scan archive contents to build this string.
+- [ ] **Step 3: Format authority-oriented overlay at 0.5s cadence**
+
+Show version + short source SHA, runtime state/attempt, recorder rate, ghosts/effective quality, archive memory/durable/snapshot/pending/quarantine/recovery, presentation aggregate, subsystem health. No archive scan to format.
 
 - [ ] **Step 4: Add concise exit summary**
 
-Log attempts started/finalized, memory/durable/snapshot revisions, pending count, recovery/quarantine, peak/last ghost state, and illegal-transition count. Diagnostic label creation/formatting failure changes Diagnostics health only.
+Attempts started/finalized, revisions, pending, recovery/quarantine, ghost state, illegal transition count, build identity. Label/format failure affects Diagnostics health only.
 
-- [ ] **Step 5: Prove GREEN and commit**
+- [ ] **Step 5: GREEN + commit**
 
 ```bash
 git add src/EchoDiagnostics.* src/main.cpp tests/cpp/test_diagnostics.cpp tests/test_v1_1_contract.py
@@ -503,27 +514,25 @@ git commit -m "fix: make ECHO_DASH diagnostics read-only and actionable"
 
 ---
 
-### Task 8: Create and execute the integration runtime certification checklist
+### Task 8: Create and execute integration runtime certification checklist
 
 **Files:**
 - Create: `docs/runtime/ECHO_DASH_RUNTIME_CERTIFICATION_CHECKLIST_v1.1.3.md`
-- Modify only if runtime evidence finds defects: relevant source/tests from this plan.
+- Modify source/tests only if runtime evidence finds defects.
 
-**Interfaces:**
-- Produces: repeatable human/runtime evidence checklist reused by final release Plan 05.
+- [ ] **Step 1: Write exact checklist**
 
-- [ ] **Step 1: Write the checklist with exact cases**
+Include PASS/FAIL/evidence fields for:
 
-Include sections and PASS fields for:
-
-- classic normal: alive manual reset, confirmed death continuation, complete, exit;
-- dual: both player identities observed, no duplicate attempt lifecycle;
-- platformer: death/reset/replay with elapsed-time authority;
-- practice: checkpoint deaths/resets and normal/practice context separation;
-- Replay Studio: repeated open/close, scrub, frame step, attempt navigation, camera/speed, exit during Studio;
-- continuation liveness: normal long advancing continuation is not cut short; forced/diagnostic invalid-continuation case releases reset;
-- restart: history/replays persist and recovery health is truthful;
-- missing/failed presentation containment where practically injectable;
+- exact Geode-visible v1.1.3 + diagnostic short source SHA matching tested source;
+- classic alive reset, confirmed death continuation, no-ghost death, completion-before-reset-request, complete, exit;
+- dual identities without duplicate lifecycle;
+- platformer elapsed-time authority;
+- practice checkpoint/reset and context separation;
+- Studio repeated open/close/scrub/frame/attempt nav/camera/speed/exit + keyboard/controller/touch input isolation;
+- long healthy continuation not cut short; injected invalid/stalled continuation releases reset;
+- restart persistence/recovery health;
+- optional presentation failure containment where injectable;
 - no stuck reset/completion/pause/resume/exit.
 
 - [ ] **Step 2: Run complete source tests**
@@ -535,14 +544,14 @@ cmake --build build-core-tests --config Release --target EchoDashCoreTests
 ctest --test-dir build-core-tests -C Release --output-on-failure
 ```
 
-Expected: zero failures.
+Expected zero failures.
 
-- [ ] **Step 3: Trigger full pinned Windows Release workflow and wait for terminal success**
+- [ ] **Step 3: Trigger pinned Windows hardening-dev workflow and wait for terminal success**
 
-Record exact source SHA, run ID, artifact ID, and package SHA256.
+Record source SHA, run/job/artifact IDs, package SHA.
 
-- [ ] **Step 4: Execute the runtime checklist against that exact package**
+- [ ] **Step 4: Execute checklist against exact package**
 
-Any observed stuck lifecycle, duplicate finalization, Studio input leakage, platformer percent-authority use, or crash is FAIL. Fixes create a new candidate and require re-running affected source/build/runtime evidence.
+Any stuck lifecycle, duplicate finalization/base action, Studio input leakage, wrong platformer authority, source identity mismatch, or crash = FAIL. A source/binary fix creates new test bytes and reruns affected evidence.
 
-- [ ] **Step 5: Record Plan-04 terminal evidence and proceed to Plan 05 only after the checklist has no unresolved FAIL.**
+- [ ] **Step 5: Record Plan-04 terminal evidence; proceed to Plan05 only with no unresolved FAIL.**
