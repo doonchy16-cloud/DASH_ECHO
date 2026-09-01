@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_LOGO_SHA256 = "ecf4014d5fa210759c40fc4ae85389beaf7bd667e0afe169f7e1eb924c9a02c2"
+APPROVED_LOGO_SHA256 = "f70c08eeeb9b76fe6672ad00aaea351073b44a5d5ecd0485b33a9ced3cb51625"
 
 
 class EchoDashReleaseAssetContract(unittest.TestCase):
