@@ -13,6 +13,7 @@
 #include "EchoReplayArchive.hpp"
 #include "EchoReplayControls.hpp"
 #include "EchoReplaySession.hpp"
+#include "EchoTimePolicy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -666,7 +667,9 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
     }
 
     void postUpdate(float dt) {
-        float const safeDt = std::isfinite(dt) ? std::clamp(dt, 0.0f, 0.25f) : 0.0f;
+        float const safeDt = static_cast<float>(
+            dash_echo::sanitizeDeltaSeconds(static_cast<double>(dt))
+        );
         m_fields->settingsPollSeconds += safeDt;
         m_fields->diagnosticsPollSeconds += safeDt;
 

@@ -1,4 +1,5 @@
 #include "EchoGhostPlaybackEngine.hpp"
+#include "EchoTimePolicy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -50,9 +51,7 @@ void EchoGhostPlaybackEngine::beginContinuation(
 void EchoGhostPlaybackEngine::advance(double dt) {
     if (m_phase != GhostPlaybackPhase::Continuing) return;
 
-    double safeDt = 0.0;
-    if (std::isfinite(dt)) safeDt = std::clamp(dt, 0.0, 0.25);
-    m_continuationElapsedSeconds += safeDt;
+    m_continuationElapsedSeconds += sanitizeDeltaSeconds(dt);
 }
 
 double EchoGhostPlaybackEngine::resolveTime(
