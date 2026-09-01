@@ -2,37 +2,36 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the existing ghost/replay presentation bounded and deterministic, wire the existing Rendering Quality setting truthfully, and harden Replay Studio interaction/layout without adding capabilities.
+**Goal:** Make current ghost/replay presentation bounded and deterministic, wire the existing Rendering Quality setting truthfully, and harden Replay Studio layout/interaction without adding capabilities.
 
-**Architecture:** Extend the single role-agnostic ghost playback engine to return one reusable frame-resolution value per selected ghost, keep cursor caches subordinate to authority, and make derived overlays/UI revision-driven. Add a pure rendering-quality controller and Replay Studio view/layout models so controls become a responsive projection of session authority instead of refreshing/building state ad hoc every frame.
+**Architecture:** Extend the one role-agnostic ghost engine so each selected ghost yields one reusable frame-resolution value per frame. Cursor caches remain subordinate to authoritative time. Make derived presentation revision-driven. Add pure Rendering Quality and Replay Studio view/layout models so UI is a responsive projection of session authority rather than a second state owner.
 
-**Tech Stack:** C++23, existing Cocos2d/Geode presentation APIs, dependency-free CTest core tests, Python source contracts, Windows Release runtime/performance evidence.
+**Tech Stack:** C++23, Cocos2d/Geode 5.10.1 presentation APIs, dependency-free CTest core mode established in Plan 01, Python contracts, pinned Windows Release/runtime evidence.
 
 **Spec:** `docs/superpowers/specs/2026-09-01-echo-dash-quality-hardening-design.md`
 
 ## Global Constraints
 
 - Run only after Plan 02 is terminal GREEN.
-- One `EchoGhostPlaybackEngine` remains the sole timing authority.
-- `GhostRole` may affect only color/opacity/trail/z-presentation, never source time, frame indices, interpolation alpha, or completion.
-- Existing configured ceiling stays 256 ghosts; no new LOD/selection feature is introduced.
-- Rendering Quality affects presentation cost only; it may not alter recorder sample rate, stored replay bytes, death analytics, attempt results, or timing authority.
-- Live gameplay remains free of a persistent launcher.
-- Replay Studio keeps the same controls/cameras/speeds/navigation capabilities.
-- No heavy archive maintenance is introduced into gameplay hot paths.
-- Prepared steady-state ghost update code must perform no ECHO_DASH-owned heap allocation.
+- Exactly one `EchoGhostPlaybackEngine` remains timing authority.
+- `GhostRole` affects presentation only; no role-dependent source time/frame/interpolation/completion logic.
+- Configured ceiling remains 256 ghosts; this plan does not add a new LOD/selection feature.
+- Rendering Quality changes presentation cost only; never recorder sample rate, replay bytes, attempt outcome, analytics truth, or synchronization authority.
+- Last/Best priority semantics stay blue/gold and visually dominant; no aura returns.
+- Replay Studio keeps the same controls, speeds, camera modes, and pause-menu entrypoint.
+- No persistent live-gameplay launcher.
+- Prepared steady-state ghost update code performs zero ECHO_DASH-owned heap allocation.
+- Heavy archive maintenance stays outside latency-sensitive gameplay work.
 
 ---
 
-## File Structure for This Plan
+## File Structure
 
 **Create:**
-- `src/EchoPlaybackResolution.hpp` — reusable cursor/result types shared by playback engine and ghost presentation.
-- `src/EchoRenderingQuality.hpp`
-- `src/EchoRenderingQuality.cpp` — pure requested/effective quality policy and Auto hysteresis.
-- `src/EchoReplayViewState.hpp` — immutable Replay Studio projection type/truth context.
-- `src/EchoReplayLayout.hpp`
-- `src/EchoReplayLayout.cpp` — pure responsive panel/control geometry model.
+- `src/EchoPlaybackResolution.hpp`
+- `src/EchoRenderingQuality.hpp/.cpp`
+- `src/EchoReplayViewState.hpp`
+- `src/EchoReplayLayout.hpp/.cpp`
 - `tests/cpp/test_playback_resolution.cpp`
 - `tests/cpp/test_role_neutrality.cpp`
 - `tests/cpp/test_rendering_quality.cpp`
@@ -48,14 +47,14 @@
 - `src/EchoReplaySession.hpp/.cpp`
 - `src/EchoReplayControls.hpp/.cpp`
 - `src/EchoRuntimeCoordinator.hpp/.cpp`
-- `src/main.cpp`
 - `src/EchoSettings.hpp/.cpp`
+- `src/main.cpp`
 - `CMakeLists.txt`
 - `tests/test_v1_1_contract.py`
 
 ---
 
-### Task 1: Return one canonical playback resolution per ghost per frame
+### Task 1: Resolve each ghost timeline exactly once per frame
 
 **Files:**
 - Create: `src/EchoPlaybackResolution.hpp`
@@ -67,7 +66,6 @@
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 struct GhostPlaybackCursor {
@@ -84,60 +82,58 @@ struct GhostFrameResolution {
     bool visible = false;
     bool finished = false;
 };
-```
 
-Extend the engine with:
-
-```cpp
-[[nodiscard]] GhostFrameResolution resolve(
+[[nodiscard]] GhostFrameResolution EchoGhostPlaybackEngine::resolve(
     AttemptRecord const& attempt,
     bool progressAlignmentSafe,
     GhostPlaybackCursor& cursor
 ) const;
 ```
 
-Change `EchoGhost` presentation to:
+`EchoGhost` changes from `synchronize(double)` to:
 
 ```cpp
 void synchronize(GhostFrameResolution const& resolution);
 ```
 
-while its already-bound `AttemptRecord const*` remains the frame source.
+Its already-bound `AttemptRecord` remains the frame source.
 
-- [ ] **Step 1: Write failing resolution tests**
+- [ ] **Step 1: Write failing interpolation/completion tests**
 
-Build a replay with frames at `t=0`, `1`, `2`. Track live time at `0.5`; assert `fromIndex=0`, `toIndex=1`, alpha `0.5`, visible true, finished false. Resolve `2.5`; assert finished true and visible false.
+Fixture frames at t=0,1,2. At authoritative source t=0.5 expect indices 0/1, alpha 0.5, visible true, finished false. At source beyond final timestamp+epsilon expect finished true/visible false.
 
-- [ ] **Step 2: Write cursor invalidation tests**
+- [ ] **Step 2: Write cursor-authority tests**
 
-Resolve forward through a replay, then force a source-time decrease by resetting/tracking earlier live time. The result must remain correct even if the cache was ahead; the implementation invalidates/reseeks rather than trusting stale cursor position.
+Resolve monotonically forward, then force a backward source-time discontinuity. Result must still be canonical: invalidate/reseek cache rather than trusting stale index. Attempt change and replay restart also reset cursor.
 
-- [ ] **Step 3: Write role metamorphic tests before changing fleet code**
+- [ ] **Step 3: Write GhostRole metamorphic tests**
 
-Use one replay and four role labels in the test fixture. For each role, call the same engine with equivalent state and assert identical source time, indices, alpha, visible, and finished values. The test source must not pass `GhostRole` into any engine API.
+For the same replay/live state, repeat resolution under test labels Older/Last/Best/Last+Best without passing role to the engine. Source time, indices, alpha, visible, and finished must match exactly.
 
-- [ ] **Step 4: Prove RED and implement `resolve`**
+- [ ] **Step 4: Prove RED and implement engine `resolve`**
 
-`resolve` first obtains authoritative source time using the existing Tracking/Continuing logic, then resolves frame indices. When source time is monotonic and cursor valid, advance from `lowerFrameIndex`; otherwise use `std::lower_bound` and refresh the cache. Clamp alpha to `[0,1]` and reject non-finite derived values safely.
+Compute authoritative source time using existing Tracking/Continuing logic, then frame indices. Use cursor advance only while source time is finite/nondecreasing and cursor belongs to the current attempt; otherwise `lower_bound` canonical search. Clamp finite alpha to [0,1].
 
-- [ ] **Step 5: Remove the second per-ghost timeline seek from `EchoGhost`**
+- [ ] **Step 5: Remove duplicate timeline-seek authority from `EchoGhost`**
 
-Delete/retire `seekFrameCursor(double)` and internal `m_frameIndex`/`m_lastSynchronizedTime` as timing lookup authority. `synchronize(resolution)` validates indices against the bound attempt and applies exactly those frames.
+Retire `seekFrameCursor`, `m_frameIndex`, and `m_lastSynchronizedTime` as independent lookup state. `synchronize(resolution)` validates indices against the bound replay and applies exactly those frames.
 
-- [ ] **Step 6: Store one cursor and one latest resolution in each fleet slot**
-
-Extend `Slot`:
+- [ ] **Step 6: Store cursor/result per fleet slot**
 
 ```cpp
-GhostPlaybackCursor playbackCursor;
-GhostFrameResolution resolution;
+struct Slot {
+    EchoGhost ghost;
+    AttemptRecord const* attempt = nullptr;
+    GhostRole role = GhostRole::Older;
+    bool progressAlignmentSafe = false;
+    GhostPlaybackCursor playbackCursor;
+    GhostFrameResolution resolution;
+};
 ```
 
-`renderFromPlaybackEngine()` calls `resolve()` once for each active slot, stores the result, and passes it to `ghost.synchronize`. `drawTrailForSlot` consumes `slot.resolution.sourceTimeSeconds` and `fromIndex`; it may not call the engine again.
+`renderFromPlaybackEngine` invokes one `resolve` per active slot and all pose/trail consumers reuse `slot.resolution`.
 
-- [ ] **Step 7: Prove GREEN and commit**
-
-Run CTest/Python suite.
+- [ ] **Step 7: Run CTest/Python regressions and commit**
 
 ```bash
 git add src/EchoPlaybackResolution.hpp src/EchoGhostPlaybackEngine.* src/EchoGhost.* src/EchoGhostFleet.* tests/cpp CMakeLists.txt
@@ -146,18 +142,14 @@ git commit -m "perf: resolve each ECHO_DASH ghost once per frame"
 
 ---
 
-### Task 2: Bound steady-state ghost/trail work and eliminate ECHO-owned hot-loop allocation
+### Task 2: Bound steady-state fleet/trail work and allocation
 
 **Files:**
 - Modify: `src/EchoGhostFleet.hpp/.cpp`
 - Modify: `src/EchoGhost.hpp/.cpp`
-- Modify: `tests/cpp/test_playback_resolution.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
 **Interfaces:**
-- Produces: fixed-capacity priority-trail scratch storage and explicit per-frame counters for test/diagnostic instrumentation.
-
-Add:
 
 ```cpp
 struct GhostFleetFrameStats {
@@ -165,44 +157,40 @@ struct GhostFleetFrameStats {
     std::size_t synchronizedGhosts = 0;
     std::size_t trailSegments = 0;
 };
-
 [[nodiscard]] GhostFleetFrameStats lastFrameStats() const;
 ```
 
-- [ ] **Step 1: Write source/behavior contracts for the hot path**
+- [ ] **Step 1: Write source/behavior contracts first**
 
-Assert `renderFromPlaybackEngine()` contains no `make_unique`, `new`, `push_back`, `emplace_back`, `resize`, or `reserve`. Assert frame stats resolutions never exceed active ghost count and trail segments never exceed `2 * 64` under Full quality.
+Inside the steady render body forbid ECHO-owned `new`, `make_unique`, `push_back`, `emplace_back`, `resize`, or `reserve`. Assert `resolutions <= activeGhostCount` and Full-quality priority trail segments <= 128 total (64 each for at most two priority identities).
 
-- [ ] **Step 2: Prove RED for frame stats/bounds**
+- [ ] **Step 2: Prove RED before stats/bounds exist**
 
-Expected: compile/source contract FAIL before instrumentation exists.
+- [ ] **Step 3: Preallocate only at attach/rebuild/safe settings boundaries**
 
-- [ ] **Step 3: Preallocate all fleet slots during `rebuild/ensurePool`, not render**
+`ensurePool` may allocate outside the frame loop. Slot cursor/result reset in place.
 
-Keep the existing vector/unique_ptr pool, but allocation is legal only in attach/rebuild/safe-boundary configuration. Reset each slot cursor/resolution without reallocation.
+- [ ] **Step 4: Replace transient trail containers with fixed-capacity/direct bounded iteration**
 
-- [ ] **Step 4: Replace per-frame temporary trail containers with fixed-capacity scratch**
+Use `std::array` scratch or direct draw iteration. Never retain unbounded history for a visible trail.
 
-Use `std::array` or direct bounded iteration. Full-quality priority trail remains capped at 64 segments per priority ghost; there are at most two priority identities.
+- [ ] **Step 5: Add numeric frame stats only**
 
-- [ ] **Step 5: Increment frame stats without formatting/logging in the hot loop**
+Reset/increment counters without log formatting or dynamic strings in the hot loop.
 
-Reset the three counters at render start and increment them as work occurs. No dynamic diagnostic strings are produced here.
-
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
-git add src/EchoGhostFleet.* src/EchoGhost.* tests
+git add src/EchoGhostFleet.* src/EchoGhost.* tests/test_v1_1_contract.py
 git commit -m "perf: bound ECHO_DASH ghost presentation work"
 ```
 
 ---
 
-### Task 3: Make existing Rendering Quality truthful with deterministic presentation-only policies
+### Task 3: Make the existing Rendering Quality setting deterministic and presentation-only
 
 **Files:**
-- Create: `src/EchoRenderingQuality.hpp`
-- Create: `src/EchoRenderingQuality.cpp`
+- Create: `src/EchoRenderingQuality.hpp/.cpp`
 - Create: `tests/cpp/test_rendering_quality.cpp`
 - Modify: `src/EchoSettings.hpp/.cpp`
 - Modify: `src/EchoGhostFleet.hpp/.cpp`
@@ -210,15 +198,14 @@ git commit -m "perf: bound ECHO_DASH ghost presentation work"
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
+enum class EffectiveRenderingQuality : std::uint8_t { Full, Balanced, Performance };
+
 struct RenderingBudget {
     std::size_t priorityTrailSegments = 64;
     std::uint8_t olderGhostPresentationInterval = 1;
 };
-
-enum class EffectiveRenderingQuality : std::uint8_t { Full, Balanced, Performance };
 
 class EchoRenderingQualityController final {
 public:
@@ -229,53 +216,49 @@ public:
 };
 ```
 
-Fixed policies:
+Fixed policy:
 
 ```text
-Full        trail segments 64, older presentation interval 1 frame
-Balanced    trail segments 40, older presentation interval 1 frame
-Performance trail segments 24, older presentation interval 2 frames
+Full        64 priority-trail segments, Older presentation every 1 frame
+Balanced    40 priority-trail segments, Older presentation every 1 frame
+Performance 24 priority-trail segments, Older presentation every 2 frames
 ```
 
-Auto policy:
+Auto:
 
 ```text
-frame cost budget = max(0.25 ms, 12% of current finite frame budget)
-degrade after 30 consecutive observations above budget
+budget = max(0.25 ms, 12% of finite current frame budget)
+degrade one level after 30 consecutive over-budget observations
 recover one level after 180 consecutive observations below 60% of budget
-60-observation cooldown after any quality transition
+60-observation cooldown after any transition
 ```
 
-Priority Last/Best ghosts continue presentation every frame in all modes. Older-ghost interval changes presentation cadence only; the shared engine remains timing authority and replay data is untouched.
+Last/Best/LastAndBest presentation remains every frame in all modes. Older cadence changes visual application frequency only; timing is still resolved canonically.
 
-- [ ] **Step 1: Write deterministic mode tests**
+- [ ] **Step 1: Write explicit-mode tests**
 
-Assert each explicit requested mode produces the exact budget above and never changes a `CaptureSettings` value.
+Each requested mode yields its exact budget. Cycle all quality values and assert capture sample rate/value object remains unchanged.
 
 - [ ] **Step 2: Write Auto hysteresis tests**
 
-Feed 29 overloaded observations -> no change; 30th -> one-level degradation. Feed fewer than 180 recovery observations -> no recovery; 180 after cooldown -> one-level recovery. Rapid alternating pressure cannot oscillate.
+29 over-budget samples -> no degradation; 30th -> one level. Recovery requires cooldown plus 180 low samples. Alternating load cannot oscillate.
 
-- [ ] **Step 3: Prove RED and implement controller**
+- [ ] **Step 3: Prove RED, implement fixed-state controller, prove GREEN**
 
-Use only fixed-size counters/state; no allocations or wall-clock I/O inside the controller.
+No allocation/I/O/logging in `observeFrame`.
 
-- [ ] **Step 4: Measure only ECHO presentation work**
+- [ ] **Step 4: Measure only ECHO presentation time**
 
-Wrap the fleet/overlay presentation portion with `std::chrono::steady_clock` and pass elapsed milliseconds plus sanitized frame budget to the controller. Do not include Geometry Dash base `postUpdate` time in the ECHO cost sample.
+Use `steady_clock` around fleet/overlay presentation, not vanilla `PlayLayer::postUpdate`. Pass measured ECHO milliseconds plus sanitized frame budget to controller.
 
-- [ ] **Step 5: Apply effective budget in fleet rendering**
+- [ ] **Step 5: Apply budget**
 
-Trail segment cap uses `priorityTrailSegments`. In Performance, Older-only slots apply their new resolved pose every second presentation frame; Last/Best/LastAndBest still synchronize visually every frame. Even when visual application is skipped, no role-specific time is invented.
+Trail cap follows budget. Performance may skip applying the newly resolved pose to Older-only ghost sprites on alternate frames; resolution still occurs from the canonical engine and priority identities remain every-frame.
 
-- [ ] **Step 6: Prove Rendering Quality cannot alter recorder authority**
-
-Add a C++ property test that cycles all requested/effective modes and asserts the normalized settings capture sample rate remains identical.
-
-- [ ] **Step 7: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
-git add src/EchoRenderingQuality.* src/EchoSettings.* src/EchoGhostFleet.* src/EchoRuntimeCoordinator.* tests/cpp CMakeLists.txt
+git add src/EchoRenderingQuality.* src/EchoSettings.* src/EchoGhostFleet.* src/EchoRuntimeCoordinator.* tests/cpp/test_rendering_quality.cpp CMakeLists.txt
 git commit -m "fix: make Rendering Quality presentation-only and truthful"
 ```
 
@@ -290,26 +273,26 @@ git commit -m "fix: make Rendering Quality presentation-only and truthful"
 - Modify: `tests/test_v1_1_contract.py`
 
 **Interfaces:**
-- Produces on both overlays:
 
 ```cpp
-void refreshIfNeeded(EchoDeathAnalytics const& analytics);
-[[nodiscard]] std::uint64_t renderedRevision() const;
+void refreshIfNeeded(EchoDeathAnalytics const& analytics, std::uint64_t presentationRevision);
+[[nodiscard]] std::uint64_t renderedAnalyticsRevision() const;
+[[nodiscard]] std::uint64_t renderedPresentationRevision() const;
 ```
 
-- [ ] **Step 1: Add failing source contracts**
+- [ ] **Step 1: Add failing source contract**
 
-Assert `main.cpp::postUpdate` no longer calls unconditional `deathOverlay.refresh(...)` or `heatmapOverlay.refresh(...)` every frame.
+`postUpdate` must not unconditionally call full `deathOverlay.refresh(...)`/`heatmapOverlay.refresh(...)` every frame.
 
-- [ ] **Step 2: Add `m_renderedRevision` to each overlay**
+- [ ] **Step 2: Track analytics + relevant presentation revision in each overlay**
 
-`refreshIfNeeded` compares `analytics.revision()` and presentation-settings revision. Rebuild once when data or relevant presentation settings change; otherwise return immediately.
+Return immediately when both match. Rebuild exactly once when death data or the overlay's own appearance settings change.
 
-- [ ] **Step 3: Replace death-event immediate full rebuild calls with revision publication**
+- [ ] **Step 3: Remove duplicate rebuild from death callback plus frame update**
 
-A recorded death increments analytics revision; the next legal render update invokes `refreshIfNeeded`. No duplicate analytical reconstruction is done in `destroyPlayer` plus `postUpdate`.
+Death recording increments analytics revision; presentation refresh consumes the new revision once.
 
-- [ ] **Step 4: Prove GREEN and commit**
+- [ ] **Step 4: GREEN + commit**
 
 ```bash
 git add src/EchoDeathOverlay.* src/EchoHeatmapOverlay.* src/main.cpp tests/test_v1_1_contract.py
@@ -318,7 +301,7 @@ git commit -m "perf: refresh death presentation by revision"
 
 ---
 
-### Task 5: Publish an immutable Replay Studio view state
+### Task 5: Publish Replay Studio as immutable session view state
 
 **Files:**
 - Create: `src/EchoReplayViewState.hpp`
@@ -329,7 +312,6 @@ git commit -m "perf: refresh death presentation by revision"
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 struct ReplayTruthContext {
@@ -337,6 +319,7 @@ struct ReplayTruthContext {
     float bestRecordedPercent = 0.0f;
     float sessionBestPercent = 0.0f;
     bool platformer = false;
+    bool operator==(ReplayTruthContext const&) const = default;
 };
 
 struct ReplayStudioViewState {
@@ -358,35 +341,27 @@ struct ReplayStudioViewState {
 };
 ```
 
-Add to `EchoReplaySession`:
+Session adds `setTruthContext`, `viewState`, and `structuralRevision`.
 
-```cpp
-void setTruthContext(ReplayTruthContext const& truth);
-[[nodiscard]] ReplayStudioViewState viewState() const;
-[[nodiscard]] std::uint64_t structuralRevision() const;
-```
+- [ ] **Step 1: Write unloaded/loaded view tests**
 
-- [ ] **Step 1: Write session-view tests**
+Unloaded disables navigation/step. A loaded known replay reports attempt/duration/cursor/progress/rate/camera/truth and correct previous/next availability.
 
-With an unloaded session: loaded false and navigation/step controls disabled. With a loaded three-frame replay: attempt ID, duration, normalized position, previous/next step availability, speed, camera mode, and truth context reflect session/archive state.
+- [ ] **Step 2: Write structural-revision tests**
 
-- [ ] **Step 2: Prove RED**
+Loaded attempt, play state, rate, camera, navigation availability, or truth changes structural revision. Ordinary elapsed cursor movement does not force structural labels to rebuild.
 
-Expected: compile FAIL before view-state interface exists.
+- [ ] **Step 3: Prove RED then implement session projection**
 
-- [ ] **Step 3: Implement structural revision rules**
+- [ ] **Step 4: Remove semantic truth fields from controls**
 
-Increment structural revision only when loaded attempt, play state, playback rate, camera mode, navigation availability, or truth context changes. Elapsed/progress cursor movement alone does not force structural label rebuild.
+Delete controls-owned GD PB/Best/Session/platformer truth. Main/coordinator sends truth to session; controls consume `viewState()` only.
 
-- [ ] **Step 4: Remove semantic truth storage from controls**
+- [ ] **Step 5: Split structural/fast refresh**
 
-Delete `m_gdLevelBestPercent`, `m_bestRecordedPercent`, `m_sessionBestPercent`, and `m_platformer` from `EchoReplayControls`; replace `setProgressContext` with `session.setTruthContext` at the coordinator/main authority boundary.
+`refreshStructural(view)` updates attempt/truth/button enabled states/speed/camera/play state only on revision change. `refreshFast(view)` updates timeline cursor/time/progress while Studio is active.
 
-- [ ] **Step 5: Split control refresh**
-
-Expose private `refreshStructural(ReplayStudioViewState const&)` and `refreshFast(ReplayStudioViewState const&)`. Structural refresh runs only when view revision changes; fast refresh updates slider/time/progress while Studio playback advances.
-
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoReplayViewState.hpp src/EchoReplaySession.* src/EchoReplayControls.* src/main.cpp tests/cpp/test_replay_view_state.cpp CMakeLists.txt
@@ -395,17 +370,15 @@ git commit -m "refactor: project Replay Studio from session view state"
 
 ---
 
-### Task 6: Make Replay Studio responsive, truthful, and edge-safe
+### Task 6: Make Replay Studio responsive and truthful on narrow/wide viewports
 
 **Files:**
-- Create: `src/EchoReplayLayout.hpp`
-- Create: `src/EchoReplayLayout.cpp`
+- Create: `src/EchoReplayLayout.hpp/.cpp`
 - Create: `tests/cpp/test_replay_layout.cpp`
 - Modify: `src/EchoReplayControls.hpp/.cpp`
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
-- Produces:
 
 ```cpp
 struct ReplayStudioLayout {
@@ -418,6 +391,7 @@ struct ReplayStudioLayout {
     float timelineY = 0.0f;
     float transportY = 0.0f;
     float utilityY = 0.0f;
+    bool compact = false;
 };
 
 [[nodiscard]] ReplayStudioLayout computeReplayStudioLayout(
@@ -426,27 +400,40 @@ struct ReplayStudioLayout {
 );
 ```
 
-- [ ] **Step 1: Write layout tests for representative aspect ratios**
+Layout law:
 
-Test `640x480`, `854x480`, `1280x720`, and `3440x1440` logical layouts. Assert panel remains inside viewport safe margins, row Y values are strictly ordered, and left/right controls remain inside panel bounds.
+```text
+safe margin = min(12, max(4, viewportWidth/40, viewportHeight/40))
+available width = max(0, viewportWidth - 2*margin)
+normal panel width = min(900, available width)
+compact=true when available width < 520
+compact panel width = max(0, available width)
+panel height = min(210, max(132, viewportHeight - 2*margin))
+```
 
-- [ ] **Step 2: Prove RED and implement deterministic layout**
+There is deliberately **no invalid `clamp(min > max)` case**. Compact mode does not remove controls; it reduces spacing/font scale and may wrap utility controls to an additional row inside the same existing Studio panel.
 
-Use safe margin `12`, panel width clamped to `[520, min(viewportWidth-24, 900)]`, and panel height clamped to `[150, min(viewportHeight-24, 210)]`. Compute rows from panel bounds rather than fixed world coordinates.
+- [ ] **Step 1: Write layout tests**
 
-- [ ] **Step 3: Retain the same existing controls but group them by hierarchy**
+Test logical sizes `480x320`, `640x480`, `854x480`, `1280x720`, `3440x1440`. Every positive viewport keeps panel inside margins; row ordering is strict; no control anchor lies outside panel bounds. `480x320` must select compact mode.
 
-Header/attempt/truth at top, timeline in the middle, transport below, restart/speed/camera/settings/close in utility/header groups. Do not add a control.
+- [ ] **Step 2: Prove RED and implement pure layout**
 
-- [ ] **Step 4: Give controls explicit IDs and larger hit targets**
+No Cocos node creation in the pure function.
 
-Create stable IDs for previous/next attempt, previous/next frame, play/pause, restart, speed, camera, settings, close, and slider. Visual font size may remain compact; button background/hit area is at least 44 logical pixels in its primary dimension where layout permits.
+- [ ] **Step 3: Group the same controls by hierarchy**
 
-- [ ] **Step 5: Drive enabled states from `ReplayStudioViewState`**
+Identity/truth -> timeline -> transport -> utility. Do not add/remove a replay command.
 
-Previous/next attempt and frame controls visibly disable when unavailable. Disabled callbacks return without session mutation. Play label, speed label, and camera label come only from view state.
+- [ ] **Step 4: Add stable IDs and larger hit targets**
 
-- [ ] **Step 6: Prove GREEN and commit**
+IDs for previous/next attempt, previous/next frame, play/pause, restart, speed, camera, settings, close, slider. Primary hit dimension targets 44 logical pixels in normal layouts and as large as safely possible in compact mode.
+
+- [ ] **Step 5: Drive disabled state from `ReplayStudioViewState`**
+
+Unavailable actions look disabled and callbacks cannot mutate the session. Labels come only from view state.
+
+- [ ] **Step 6: GREEN + commit**
 
 ```bash
 git add src/EchoReplayLayout.* src/EchoReplayControls.* tests/cpp/test_replay_layout.cpp CMakeLists.txt
@@ -455,97 +442,87 @@ git commit -m "fix: harden Replay Studio layout and control states"
 
 ---
 
-### Task 7: Make scrub/open/close behavior transactional and input-safe
+### Task 7: Make scrub/open/close transactional and input-isolated
 
 **Files:**
+- Modify: `src/EchoReplaySession.hpp/.cpp`
 - Modify: `src/EchoReplayControls.hpp/.cpp`
 - Modify: `src/EchoRuntimeCoordinator.hpp/.cpp`
 - Modify: `src/main.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
-**Interfaces:**
-- Produces: explicit `m_userScrubbing` UI fact; coordinator remains semantic Studio-state authority.
+- [ ] **Step 1: Add scrub ownership**
 
-- [ ] **Step 1: Add scrub ownership tests/contracts**
+UI fact `m_userScrubbing` prevents fast refresh from overwriting slider thumb while drag is active. End drag invokes one clamped seek and resumes ordinary cursor projection.
 
-While `m_userScrubbing` is true, `refreshFast` may update time/progress labels but may not overwrite slider thumb position. On scrub end, one clamped `seekNormalized` occurs and ordinary cursor following resumes.
+- [ ] **Step 2: Harden seek inputs**
 
-- [ ] **Step 2: Clamp/finite-check every seek entry**
+`seekNormalized`: reject NaN/infinity, clamp finite [0,1]. `seekSeconds`: reject nonfinite, clamp [0,duration]. Successful seek synchronizes replay pose/camera continuity before publishing cursor state.
 
-`EchoReplaySession::seekNormalized` rejects NaN and clamps finite values to `[0,1]`; `seekSeconds` clamps to `[0,duration]`. Successful seek synchronizes replay pose and camera continuity before publishing the new view revision/cursor.
-
-- [ ] **Step 3: Make Studio open a two-phase UI transaction**
-
-Required order:
+- [ ] **Step 3: Two-phase Studio open**
 
 ```text
-validate replay/session loaded
+validate loaded replay
 -> coordinator accepts OpenStudio
 -> capture viewport
--> initialize/show Studio panel and input blocker
+-> construct/show panel + input blocker
 -> hide normal fleet presentation
--> only then allow PauseLayer::onResume to remove vanilla pause
+-> report open success
+-> PauseLayer may then onResume/remove itself
 ```
 
-If panel/input-blocker creation fails after coordinator acceptance, call `closeReplayStudio`, restore viewport/fleet state, and return false so PauseLayer remains.
+If any required UI construction fails after coordinator acceptance, close/rollback Studio state, restore viewport/fleet, and return false so vanilla PauseLayer remains.
 
-- [ ] **Step 4: Add a full-screen Cocos touch blocker behind Studio controls**
+- [ ] **Step 4: Add full-screen input blocker while Studio owns input**
 
-Use a `CCLayer`/touch-dispatcher node attached only while Studio is open; its touch begin returns true to swallow pointer/touch interaction outside Studio. It is presentation plumbing, not a new launcher/control. Remove it idempotently on close/teardown.
+Use a Cocos touch/mouse interception layer behind Studio controls but above gameplay input. It exists only during Studio and is detached idempotently. This is modal plumbing, not a new control/feature.
 
-- [ ] **Step 5: Make close restore ownership atomically**
+- [ ] **Step 5: Transactional close**
 
-Stop replay -> destroy/hide Studio input/panel -> restore viewport if still valid -> coordinator accepts CloseStudio -> resume fleet tracking if state is Playing. Scene teardown invalidates restore state and wins over restoration.
+Stop replay -> remove blocker/panel -> restore captured viewport if node still valid -> coordinator CloseStudio -> resume appropriate Playing fleet tracking. Scene exit invalidates restore state and wins.
 
-- [ ] **Step 6: Add source contracts**
+- [ ] **Step 6: Contracts**
 
-PauseLayer still contains exactly one ordinary ECHO entry. No live gameplay launcher field/node is added. Studio cannot be open while coordinator state is DeathContinuation/Resetting/Exiting.
+Exactly one ordinary PauseLayer ECHO entry; no live launcher; Studio cannot coexist with DeathContinuation/Resetting/Exiting; failed Studio initialization cannot remove PauseLayer.
 
-- [ ] **Step 7: Prove GREEN and commit**
+- [ ] **Step 7: GREEN + commit**
 
 ```bash
-git add src/EchoReplayControls.* src/EchoRuntimeCoordinator.* src/main.cpp tests/test_v1_1_contract.py
+git add src/EchoReplaySession.* src/EchoReplayControls.* src/EchoRuntimeCoordinator.* src/main.cpp tests/test_v1_1_contract.py
 git commit -m "fix: make Replay Studio transitions transactional"
 ```
 
 ---
 
-### Task 8: Add performance regression instrumentation and Plan-03 evidence gate
+### Task 8: Plan-03 performance/UX evidence gate
 
-**Files:**
-- Modify: `src/EchoGhostFleet.hpp/.cpp`
-- Modify: `src/main.cpp`
-- Modify: `tests/cpp/test_rendering_quality.cpp`
-- Modify: `tests/test_v1_1_contract.py`
+**Files:** modify only if verification finds a defect.
 
-**Interfaces:**
-- Produces: bounded counters needed later by diagnostics; runtime benchmark checklist evidence, not a new visible feature.
+- [ ] **Step 1: Structural audit**
 
-- [ ] **Step 1: Add structural regression checks**
+Prove no archive maintenance in ordinary live `postUpdate`, no unconditional full overlay rebuild, no `GhostRole` in playback engine, one fleet engine resolution per active slot, no hot-loop dynamic growth, and no Rendering Quality dependency on recorder setters.
 
-Prove:
+- [ ] **Step 2: Full local suite**
 
-- no archive compaction/maintenance in ordinary live `postUpdate`;
-- no unconditional overlay full rebuild each frame;
-- no `GhostRole` dependency in engine;
-- one `resolve(` call site inside the fleet per active slot path;
-- hot loop contains no ECHO-owned dynamic-container growth calls;
-- Rendering Quality code never references recorder setters.
+```powershell
+python -m unittest discover -s tests -p "test_*.py" -v
+cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
+cmake --build build-core-tests --config Release --target EchoDashCoreTests
+ctest --test-dir build-core-tests -C Release --output-on-failure
+```
 
-- [ ] **Step 2: Run complete native/Python suite**
+Expected zero failures.
 
-Expected: zero failures.
+- [ ] **Step 3: Full pinned Windows workflow**
 
-- [ ] **Step 3: Trigger full pinned Windows Release workflow and wait for terminal success**
+Wait for terminal success; build/package success does not certify runtime smoothness.
 
-No runtime smoothness claim is made yet.
+- [ ] **Step 4: Runtime performance matrix on the exact artifact**
 
-- [ ] **Step 4: Run the runtime performance matrix on the exact candidate produced by this gate**
+Configured ghost counts `1,8,16,64,128,256`, recorder 120 and 240 Hz where practical, priority trails/death/heat existing presentation. Record incremental ECHO cost and observed visual correctness. Plan 04 will expose richer aggregate diagnostics; external frame logs/video are acceptable at this interim gate.
 
-Record incremental ECHO_DASH frame cost and observed behavior for configured ghost counts `1, 8, 16, 64, 128, 256`, with priority trails and existing death/heat presentation. Repeat at recorder 120 Hz and 240 Hz. Capture current/worst and a representative p95/p99-like sample from diagnostics instrumentation once Plan 04 exposes it; until then retain external frame-time logs/video.
+- [ ] **Step 5: Runtime Replay Studio matrix on the same bytes**
 
-- [ ] **Step 5: Runtime UX checklist on the same candidate**
+Pause->ECHO, repeated open/close, prev/next attempt edge states, prev/next frame edge states, play/pause/restart, all existing speeds/cameras, scrub, close/viewport restore, narrow and wide viewport if available, and gameplay-input isolation. Any leakage/stuck state is FAIL.
 
-Verify Pause -> ECHO -> Studio, previous/next attempt edges, previous/next frame edges, play/pause, restart, all existing speeds, all existing camera modes, slider drag, close/viewport restore, odd aspect ratio if available, and repeated open/close. Any gameplay-input leakage while Studio is open is a FAIL requiring a fix before Plan 04.
-
-- [ ] **Step 6: Record exact commit SHA, workflow run, package hash, and runtime evidence; proceed to Plan 04 only after source/build tests are terminal and no known UX regression remains.**
+- [ ] **Step 6: Record source SHA, workflow run, package SHA and evidence. Proceed to Plan 04 only with no unresolved source/build/UX defect.**
