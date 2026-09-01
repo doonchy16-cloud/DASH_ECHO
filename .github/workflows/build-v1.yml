@@ -23,6 +23,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m unittest tests.test_v1_1_contract tests.test_release_assets -v
+          if ($LASTEXITCODE -ne 0) { throw "Python contract tests failed with exit code $LASTEXITCODE" }
 
       - name: Run ECHO_DASH native core tests
         shell: pwsh
@@ -30,8 +31,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Remove-Item Env:GEODE_SDK -ErrorAction SilentlyContinue
           cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
+          if ($LASTEXITCODE -ne 0) { throw "Core-test CMake configure failed with exit code $LASTEXITCODE" }
           cmake --build build-core-tests --config Release --target EchoDashCoreTests
+          if ($LASTEXITCODE -ne 0) { throw "Core-test build failed with exit code $LASTEXITCODE" }
           ctest --test-dir build-core-tests -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Core-test CTest failed with exit code $LASTEXITCODE" }
 
       - name: Install pinned Geode CLI 3.7.4
         shell: pwsh
@@ -57,6 +61,7 @@ jobs:
           $cliDir = Split-Path -Parent $exe.FullName
           $cliDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & $exe.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw "Verified Geode CLI failed with exit code $LASTEXITCODE" }
 
       - name: Install pinned Geode SDK 5.10.1
         shell: pwsh
@@ -64,6 +69,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $sdk = Join-Path $env:RUNNER_TEMP 'geode-sdk-v5.10.1'
           git clone --depth 1 --branch v5.10.1 https://github.com/geode-sdk/geode.git $sdk
+          if ($LASTEXITCODE -ne 0) { throw "Geode SDK clone failed with exit code $LASTEXITCODE" }
           "GEODE_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $env:GEODE_SDK = $sdk
 
@@ -92,7 +98,9 @@ jobs:
           $config | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $geodeRoot 'config.json') -Encoding utf8
 
           geode sdk version
+          if ($LASTEXITCODE -ne 0) { throw "Geode SDK version check failed with exit code $LASTEXITCODE" }
           geode sdk install-binaries --platform win --version 5.10.1
+          if ($LASTEXITCODE -ne 0) { throw "Geode SDK binary install failed with exit code $LASTEXITCODE" }
 
       - name: Build Windows Release package
         shell: pwsh
