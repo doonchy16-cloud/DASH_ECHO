@@ -6,16 +6,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class EchoDashV112Contract(unittest.TestCase):
+class EchoDashV113Contract(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
     def test_branding_version_and_legacy_id(self):
         metadata = json.loads(self.read("mod.json"))
         self.assertEqual(metadata["name"], "ECHO_DASH")
-        self.assertEqual(metadata["version"], "v1.1.2")
+        self.assertEqual(metadata["version"], "v1.1.3")
         self.assertEqual(metadata["id"], "doonchy.dash-echo")
-        self.assertIn("VERSION 1.1.2", self.read("CMakeLists.txt"))
+        self.assertIn("VERSION 1.1.3", self.read("CMakeLists.txt"))
 
     def test_ghost_count_supports_256(self):
         metadata = json.loads(self.read("mod.json"))
@@ -175,19 +175,20 @@ class EchoDashV112Contract(unittest.TestCase):
         self.assertLess(validated, summary_mutation)
         self.assertLess(summary_mutation, replay_mutation)
 
-    def test_release_surfaces_are_all_v112(self):
+    def test_release_surfaces_are_v113_hardening_dev(self):
         main = self.read("src/main.cpp")
         workflow = self.read(".github/workflows/build-v1.yml")
 
-        self.assertRegex(main, r'kReleaseVersion\s*=\s*"v1\.1\.2"')
-        self.assertIn("ECHO_DASH 1.1.2 |", main)
+        self.assertRegex(main, r'kReleaseVersion\s*=\s*"v1\.1\.3"')
+        self.assertIn("ECHO_DASH 1.1.3 |", main)
         self.assertIn("recoveredFromBackup", main)
         self.assertIn("quarantinedReplayCount", main)
-        self.assertIn("name: ECHO_DASH v1.1.2 Build", workflow)
-        self.assertIn("Run v1.1.2 contract regression tests", workflow)
-        self.assertIn("ECHO-DASH-v1.1.2-compiler-evidence", workflow)
-        self.assertIn("ECHO-DASH-v1.1.2-windows", workflow)
-        self.assertIn("Upload v1.1.2 candidate", workflow)
+        self.assertIn("name: ECHO_DASH v1.1.3 Hardening Development Build", workflow)
+        self.assertIn("Run v1.1.3 contract regression tests", workflow)
+        self.assertIn("ECHO-DASH-v1.1.3-hardening-dev-${{ github.sha }}-compiler-evidence", workflow)
+        self.assertIn("ECHO-DASH-v1.1.3-hardening-dev-${{ github.sha }}-windows", workflow)
+        self.assertIn("Upload v1.1.3 hardening dev package", workflow)
+        self.assertNotIn("candidate", workflow.lower())
 
     def test_fleet_is_dynamic_and_supports_256(self):
         header = self.read("src/EchoGhostFleet.hpp")
@@ -254,11 +255,12 @@ class EchoDashV112Contract(unittest.TestCase):
                 "DASH ECHO v1.0",
                 "ECHO_DASH v1.1.0",
                 "ECHO_DASH v1.1.1",
+                "ECHO_DASH 1.1.2 |",
             )):
                 stale.append(path.name)
         self.assertEqual(stale, [])
 
-    def test_about_and_readme_are_v112(self):
+    def test_about_and_readme_describe_stable_v112_baseline(self):
         combined = self.read("README.md") + "\n" + self.read("about.md")
         self.assertIn("ECHO_DASH", combined)
         self.assertIn("v1.1.2", combined)
