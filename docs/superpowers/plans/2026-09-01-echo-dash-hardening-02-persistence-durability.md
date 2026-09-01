@@ -2,76 +2,94 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace per-attempt whole-archive rewriting with journaled transactional durability, deterministic snapshot recovery, and explicit durability revisions while preserving supported v1.1.2 replay/history data.
+**Goal:** Replace per-attempt whole-archive rewriting with context-bound journaled transactional durability, deterministic snapshot recovery, explicit durability revisions, and bounded cross-context pending preservation while retaining supported v1.1.2 replay/history data.
 
-**Architecture:** Keep `EchoReplayArchive` as the public in-memory façade, extract wire encoding into a pure codec, add a checksum-framed append-only journal and an injectable filesystem store, and make each newly finalized attempt one structurally atomic archive entry containing its summary plus replay. Existing schema-1 summary-only history is preserved as an explicit compatibility state. Snapshot compaction and retention become safe-window maintenance; primary/backup/journal recovery is deterministic and corrupt evidence is preserved before repair.
+**Architecture:** Extract level/archive context and wire encoding into Geode-independent modules. Represent each new finalized attempt as one immutable shared archive value containing summary + replay. Use a checksum-framed append-only journal and injectable filesystem store. A bounded pending-durability ledger retains accepted immutable attempts across level/mode context switches without duplicating replay payloads. Snapshot compaction and retention run only at safe maintenance boundaries; recovery preserves corrupt evidence before repair.
 
-**Tech Stack:** C++23 standard library, Windows durable file operations for the certified target, CTest dependency-free native tests, Geode 5.10.1 storage integration, Python source contracts, GitHub Actions Windows Release build.
+**Tech Stack:** C++23 standard library, Windows durable file operations for the certified target, CTest dependency-free native tests, Geode 5.10.1 save-directory adapter, Python source contracts, GitHub Actions Windows Release build.
 
 **Spec:** `docs/superpowers/specs/2026-09-01-echo-dash-quality-hardening-design.md`
 
 ## Global Constraints
 
 - Run only after Plan 01 is terminal GREEN.
-- No archive browser, cloud sync, network storage, or other user-facing replay feature is introduced.
+- No archive browser, cloud sync, network storage, or new replay capability.
 - Product data/settings identity stays `doonchy.dash-echo`.
-- v1.1.2 schema-1 archives remain readable; rejected/corrupt artifacts are preserved before any repair/promotion.
-- Every **new** finalized attempt is published as one complete summary+replay logical unit. A legacy or intentionally retention-evicted summary without replay is represented explicitly, never confused with a failed half-commit.
+- Current v1.1.2 schema-1 files under `Mod::get()->getSaveDir()/echo_dash/<storageKey>.edar` and `.edar.bak` remain readable. Rejected/corrupt artifacts are preserved before repair/promotion.
+- Every **new** finalized attempt is one complete summary+replay logical unit. A legacy or intentionally retention-evicted summary without replay is explicit compatibility state, never a half-commit.
 - A failed journal write may produce `PendingDurability`; it may not expose half of a new attempt.
+- Later revisions for the same context are never durably appended ahead of an earlier failed revision.
+- Accepted pending attempts are not silently discarded by context switch. Pending memory is bounded; once the bound is exhausted during storage failure, new archive publication is rejected/degraded rather than deleting earlier accepted pending data.
 - Heavy compaction, backup rotation, full validation, and retention maintenance never run in latency-sensitive live `postUpdate` work.
-- Journal and snapshot parsers validate hard bounds before allocating declared payload sizes.
-- No PASS claim is made without fresh fault tests plus terminal Windows Release build evidence.
+- Parsers validate hard bounds before allocating declared payloads.
+- No PASS claim without fresh fault tests plus terminal Windows Release build evidence.
 
 ---
 
-## File Structure for This Plan
+## File Structure
 
 **Create:**
-- `src/EchoArchiveData.hpp` — in-memory archive image/value types and explicit replay-presence state.
-- `src/EchoArchiveCodec.hpp`
-- `src/EchoArchiveCodec.cpp` — schema-1 reader plus schema-2 snapshot reader/writer; no Geode path ownership.
-- `src/EchoChecksum.hpp`
-- `src/EchoChecksum.cpp` — deterministic CRC32.
-- `src/EchoReplayJournal.hpp`
-- `src/EchoReplayJournal.cpp` — bounded journal record encoding/scan.
-- `src/EchoDurableFileOps.hpp`
-- `src/EchoDurableFileOps.cpp` — durable append/flush/copy/replace primitives.
-- `src/EchoArchiveStore.hpp`
-- `src/EchoArchiveStore.cpp` — `IArchiveStore` plus production primary/backup/journal implementation.
+- `src/EchoArchiveContext.hpp/.cpp` — pure `EchoLevelContext`, storage key, matching, stable FNV-1a hash/fingerprint.
+- `src/EchoArchiveData.hpp` — immutable archive entry/image types.
+- `src/EchoArchiveCodec.hpp/.cpp` — schema-1 reader plus schema-2 snapshot reader/writer; no Geode path ownership.
+- `src/EchoChecksum.hpp/.cpp` — deterministic CRC32.
+- `src/EchoReplayJournal.hpp/.cpp` — bounded journal record encode/scan.
+- `src/EchoDurableFileOps.hpp/.cpp` — durable append/flush/copy/replace primitives.
+- `src/EchoArchiveStore.hpp/.cpp` — `IArchiveStore`, `IArchiveStoreFactory`, production filesystem store/factory.
+- `src/EchoArchiveStoreGeode.hpp/.cpp` — only Geode save-directory adapter for production store factory.
+- `src/EchoPendingDurability.hpp/.cpp` — fixed-capacity reservation + detached pending ledger.
+- `tests/cpp/test_archive_context.cpp`
 - `tests/cpp/test_archive_codec.cpp`
 - `tests/cpp/test_replay_journal.cpp`
 - `tests/cpp/test_archive_store.cpp`
+- `tests/cpp/test_pending_durability.cpp`
 - `tests/cpp/test_replay_archive_durability.cpp`
 - `tests/cpp/test_archive_corruption.cpp`
 - `tests/cpp/archive_fixture_writer.cpp`
-- `tests/fixtures/v1_1_2_schema1_minimal.bin` — committed compatibility fixture generated from the extracted unmodified schema-1 writer before schema-2 writes replace it.
+- `tests/fixtures/v1_1_2_schema1_minimal.bin` — committed compatibility fixture generated from extracted unchanged schema-1 writer.
 
 **Modify:**
-- `src/EchoReplayArchive.hpp/.cpp` — delegate encoding/storage, use structurally complete entries, expose structured commit/maintenance state, preserve query semantics.
-- `src/EchoAttemptHistory.hpp/.cpp` — commit prepared history only after archive logical acceptance.
-- `src/EchoRuntimeCoordinator.hpp/.cpp` — consume structured durability/maintenance results.
-- `src/main.cpp` — remove direct whole-archive save/ingest policy.
+- `src/EchoReplayArchive.hpp/.cpp`
+- `src/EchoAttemptHistory.hpp/.cpp`
+- `src/EchoRuntimeCoordinator.hpp/.cpp`
+- `src/main.cpp`
 - `CMakeLists.txt`
 - `.github/workflows/build-v1.yml`
 - `tests/test_v1_1_contract.py`
 
 ---
 
-### Task 1: Extract the legacy archive codec and capture a real schema-1 fixture
+### Task 1: Extract pure archive context and legacy schema-1 codec; capture a real fixture
 
 **Files:**
+- Create: `src/EchoArchiveContext.hpp/.cpp`
 - Create: `src/EchoArchiveData.hpp`
-- Create: `src/EchoArchiveCodec.hpp`
-- Create: `src/EchoArchiveCodec.cpp`
+- Create: `src/EchoArchiveCodec.hpp/.cpp`
+- Create: `tests/cpp/test_archive_context.cpp`
 - Create: `tests/cpp/test_archive_codec.cpp`
 - Create: `tests/cpp/archive_fixture_writer.cpp`
 - Create during execution: `tests/fixtures/v1_1_2_schema1_minimal.bin`
-- Modify: `src/EchoReplayArchive.cpp`
+- Modify: `src/EchoReplayArchive.hpp/.cpp`
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
 
 ```cpp
+struct EchoLevelContext {
+    std::int64_t levelId = 0;
+    std::uint64_t fallbackHash = 0;
+    bool platformer = false;
+    bool practice = false;
+    int gdNormalPercent = 0;
+    std::string levelName;
+
+    [[nodiscard]] std::string storageKey() const;
+    [[nodiscard]] bool matches(EchoLevelContext const& other) const;
+};
+
+[[nodiscard]] std::uint64_t stableNameHash(std::string_view text);
+[[nodiscard]] std::uint64_t archiveContextFingerprint(EchoLevelContext const& context);
+
 enum class ArchivedReplayState : std::uint8_t {
     Present,
     EvictedByRetention,
@@ -79,14 +97,17 @@ enum class ArchivedReplayState : std::uint8_t {
 };
 
 struct ArchivedAttempt {
+    std::uint64_t revision = 0;
     AttemptHistoryEntry summary;
     std::optional<AttemptRecord> replay;
     ArchivedReplayState replayState = ArchivedReplayState::Present;
 };
 
+using ArchivedAttemptPtr = std::shared_ptr<ArchivedAttempt const>;
+
 struct EchoArchiveImage {
     EchoLevelContext context;
-    std::deque<ArchivedAttempt> attempts;
+    std::deque<ArchivedAttemptPtr> attempts;
     std::uint64_t revision = 0;
     std::size_t quarantinedReplayCount = 0;
 };
@@ -115,38 +136,31 @@ struct ArchiveDecodeResult {
 );
 ```
 
-`encodeSchema1Fixture` is provenance/test support only. Production writes move to schema 2 later in this plan.
+`stableNameHash` is the current 64-bit FNV-1a implementation moved out of `EchoReplayArchive`; existing callers migrate to the pure function. `archiveContextFingerprint` hashes `context.storageKey()`.
 
-- [ ] **Step 1: Add a preservation contract before extraction**
+- [ ] **Step 1: Add preservation/context tests before extraction**
 
-Keep all current v1.1.2 archive Python tests GREEN. Add source contracts requiring `recoveredFromBackup` and `quarantinedReplayCount` to survive the extraction.
+Pin storage keys for ID/local, classic/platformer, normal/practice contexts. Identical contexts must match; practice/platformer differences must not. Preserve current v1.1.2 Python recovery/quarantine contracts.
 
-- [ ] **Step 2: Move low-level schema-1 encoding/decoding without changing bytes**
+- [ ] **Step 2: Move `EchoLevelContext` + hash implementation without behavior change**
 
-Move POD/string/color/player/camera/frame/summary/replay/context serialization plus semantic validators from `EchoReplayArchive.cpp` into `EchoArchiveCodec.cpp`. `EchoReplayArchive` calls the codec; it no longer owns `readPod`, `writePod`, `readFrame`, `writeFrame`, or equivalent wire helpers.
+`EchoReplayArchive.hpp` includes `EchoArchiveContext.hpp`; remove its duplicate context/hash ownership. Main fallback-name hashing uses `stableNameHash`.
 
-- [ ] **Step 3: Join schema-1 summaries/replays into explicit `ArchivedAttempt` values**
+- [ ] **Step 3: Move schema-1 wire helpers and semantic validators into codec without changing bytes**
 
-For each decoded summary, match at most one replay by attempt ID. A valid pair becomes `Present`. A valid summary with no replay becomes `LegacySummaryOnly`. A replay with no summary, duplicate summary, duplicate replay, or mismatched identity is quarantined/rejected according to semantic validity; never guess a pairing.
+Move POD/string/color/player/camera/frame/summary/replay/context serialization and validation from `EchoReplayArchive.cpp`. Codec remains Geode-independent.
 
-- [ ] **Step 4: Write round-trip tests and prove RED/GREEN**
+- [ ] **Step 4: Join schema-1 summary/replay records into explicit immutable entries**
 
-Build a deterministic one-attempt image and prove schema-1 encode/decode preserves attempt ID, frame sequence, timestamps, progress, player/camera state, end reason, summary outcome, context, and `Present` replay state. Add a summary-only fixture in memory and prove decode marks it `LegacySummaryOnly` rather than treating it as a half-commit.
+For each decoded summary, match at most one replay by attempt ID. Valid pair -> `Present`; valid summary without replay -> `LegacySummaryOnly`; orphan replay, duplicate summary/replay, identity mismatch -> quarantine/reject according to semantic validity. Never guess a pair. Legacy entries use revision 0 because schema 1 has no durability revision.
 
-- [ ] **Step 5: Build the one-time fixture writer**
+- [ ] **Step 5: Write round-trip tests and prove RED/GREEN**
 
-Add CMake target:
+One deterministic attempt must preserve attempt ID, frame sequence/time/progress, player/camera state, end reason, summary outcome, context, and `Present`. A summary-only schema-1 case must decode as `LegacySummaryOnly`.
 
-```cmake
-add_executable(EchoDashArchiveFixtureWriter
-    tests/cpp/archive_fixture_writer.cpp
-    src/EchoArchiveCodec.cpp
-)
-target_include_directories(EchoDashArchiveFixtureWriter PRIVATE src tests/cpp)
-target_compile_features(EchoDashArchiveFixtureWriter PRIVATE cxx_std_23)
-```
+- [ ] **Step 6: Build and commit a deterministic real schema-1 fixture**
 
-Run:
+Core-only CMake target includes `EchoArchiveContext.cpp`, `EchoArchiveCodec.cpp`, and fixture writer. Run:
 
 ```powershell
 cmake --build build-core-tests --config Release --target EchoDashArchiveFixtureWriter
@@ -154,18 +168,18 @@ cmake --build build-core-tests --config Release --target EchoDashArchiveFixtureW
 Get-FileHash tests\fixtures\v1_1_2_schema1_minimal.bin -Algorithm SHA256
 ```
 
-Record the SHA256 literal in `test_archive_codec.cpp` and test the committed fixture directly on every later run.
+Record the exact SHA literal in `test_archive_codec.cpp`; every later test loads the committed fixture directly.
 
-- [ ] **Step 6: Run all tests and commit**
+- [ ] **Step 7: Prove GREEN and commit**
 
 ```bash
-git add src/EchoArchiveData.hpp src/EchoArchiveCodec.* src/EchoReplayArchive.cpp tests/cpp tests/fixtures CMakeLists.txt tests/test_v1_1_contract.py
-git commit -m "refactor: extract ECHO_DASH archive codec"
+git add src/EchoArchiveContext.* src/EchoArchiveData.hpp src/EchoArchiveCodec.* src/EchoReplayArchive.* tests/cpp tests/fixtures CMakeLists.txt tests/test_v1_1_contract.py
+git commit -m "refactor: extract ECHO_DASH archive context and codec"
 ```
 
 ---
 
-### Task 2: Add CRC32 and the context-bound append-only journal format
+### Task 2: Add CRC32 and the context-bound append-only journal
 
 **Files:**
 - Create: `src/EchoChecksum.hpp/.cpp`
@@ -184,7 +198,7 @@ enum class JournalTransactionType : std::uint16_t {
 struct JournalAttemptCommit {
     std::uint64_t revision = 0;
     std::uint64_t contextFingerprint = 0;
-    ArchivedAttempt attempt;
+    ArchivedAttemptPtr attempt;
 };
 
 struct JournalEviction {
@@ -193,11 +207,7 @@ struct JournalEviction {
     std::vector<std::uint64_t> attemptIds;
 };
 
-enum class JournalScanStatus : std::uint8_t {
-    Clean,
-    TruncatedTail,
-    RejectedHeader
-};
+enum class JournalScanStatus : std::uint8_t { Clean, TruncatedTail, RejectedHeader };
 
 struct JournalScanResult {
     JournalScanStatus status = JournalScanStatus::Clean;
@@ -207,57 +217,50 @@ struct JournalScanResult {
     std::size_t quarantinedTransactions = 0;
 };
 
-[[nodiscard]] std::uint64_t archiveContextFingerprint(EchoLevelContext const& context);
 [[nodiscard]] std::uint32_t echoCrc32(std::span<std::byte const> bytes);
+[[nodiscard]] std::vector<std::byte> encodeAttemptCommitRecord(JournalAttemptCommit const& tx);
+[[nodiscard]] std::vector<std::byte> encodeEvictionRecord(JournalEviction const& tx);
+[[nodiscard]] JournalScanResult scanJournal(std::span<std::byte const> bytes, std::uint64_t expectedContextFingerprint);
 ```
 
-`archiveContextFingerprint` is `EchoReplayArchive::stableNameHash(context.storageKey())`; tests pin identical/different-context behavior.
-
-Journal record framing is fixed:
+Framing:
 
 ```text
-8 bytes  magic = "ECHOJNL2"
-4 bytes  journal schema = 1
-2 bytes  transaction type
-2 bytes  reserved = 0
-8 bytes  payload length
-8 bytes  transaction revision
-8 bytes  context fingerprint
-8 bytes  attempt id (0 for eviction transaction)
-4 bytes  payload CRC32
+8 bytes magic = "ECHOJNL2"
+4 bytes journal schema = 1
+2 bytes transaction type
+2 bytes reserved = 0
+8 bytes payload length
+8 bytes transaction revision
+8 bytes context fingerprint
+8 bytes attempt id (0 for eviction)
+4 bytes payload CRC32
 payload
-8 bytes  footer = "ECHOCMIT"
+8 bytes footer = "ECHOCMIT"
 ```
-
-All numeric fields use the existing little-endian POD convention for the pinned Windows release.
 
 - [ ] **Step 1: Write CRC/context tests**
 
-Assert CRC32 `"123456789" == 0xCBF43926`, empty input is zero, identical contexts have identical nonzero fingerprints, and normal/practice or classic/platformer variants produce different fingerprints.
+`"123456789" -> 0xCBF43926`, empty -> 0. Context fingerprint equality/difference follows storage-key identity.
 
-- [ ] **Step 2: Write journal round-trip/truncation tests before implementation**
+- [ ] **Step 2: Write round-trip/truncation/corruption tests before implementation**
 
-Cover one commit, two commits, replay-eviction transaction, wrong context fingerprint, checksum corruption, truncated header, truncated payload, missing footer, trailing garbage, and out-of-bound payload length.
+Cover one/two commits, eviction, wrong context, checksum corruption, partial header/payload/footer, trailing garbage, absurd length, duplicate ID list.
 
-Expected rules:
+Rules: partial final record preserves earlier full records; bad checksum with trustworthy bounded length quarantines that record and continues; invalid header/absurd length stops at valid prefix without allocating the declared payload; mismatched context is never applied.
 
-- partial final record -> `TruncatedTail` while earlier complete records survive;
-- bad checksum with trustworthy bounded length -> quarantine that record and continue from its known end;
-- invalid magic/header/absurd length -> stop at valid prefix without allocating declared payload;
-- requested-context mismatch -> transaction is not applied to that archive image.
+- [ ] **Step 3: Prove RED then implement bounded parser**
 
-- [ ] **Step 3: Prove RED, then implement bounded parser**
-
-Hard caps checked before allocation:
+Hard caps before allocation:
 
 ```cpp
 static constexpr std::uint64_t kMaxJournalPayloadBytes = 512ull * 1024ull * 1024ull;
 static constexpr std::size_t kMaxEvictionIdsPerTransaction = 100'000;
 ```
 
-- [ ] **Step 4: Implement record builders**
+- [ ] **Step 4: Enforce complete immutable commit values**
 
-`encodeAttemptCommitRecord` accepts only `ArchivedReplayState::Present` with a valid summary+replay pair and matching nonzero attempt IDs. `encodeEvictionRecord` requires a nonempty bounded unique ID list. Both build one complete byte vector before filesystem append.
+`encodeAttemptCommitRecord` requires non-null `attempt`, `replayState == Present`, present replay, matching nonzero summary/replay attempt IDs, `attempt->revision == tx.revision`, and context fingerprint nonzero. Eviction requires nonempty bounded unique IDs.
 
 - [ ] **Step 5: Prove GREEN and commit**
 
@@ -268,13 +271,15 @@ git commit -m "feat: add context-bound ECHO_DASH replay journal"
 
 ---
 
-### Task 3: Add durable file operations and an injectable `IArchiveStore`
+### Task 3: Add durable file operations and injectable context store factory
 
 **Files:**
 - Create: `src/EchoDurableFileOps.hpp/.cpp`
 - Create: `src/EchoArchiveStore.hpp/.cpp`
+- Create: `src/EchoArchiveStoreGeode.hpp/.cpp`
 - Create: `tests/cpp/test_archive_store.cpp`
 - Modify: `src/EchoArchiveCodec.hpp/.cpp`
+- Modify: `src/main.cpp`
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
@@ -284,16 +289,13 @@ enum class ArchiveLoadDisposition : std::uint8_t {
     NoExistingArchive,
     LoadedPrimary,
     LoadedPrimaryWithQuarantine,
+    LoadedLegacySchema1,
     RecoveredBackup,
     RecoveredJournalOnly,
     Unrecoverable
 };
 
-enum class DurableWriteResult : std::uint8_t {
-    Durable,
-    RetryableFailure,
-    PermanentFailure
-};
+enum class DurableWriteResult : std::uint8_t { Durable, RetryableFailure, PermanentFailure };
 
 struct ArchiveStoreLoadResult {
     ArchiveLoadDisposition disposition = ArchiveLoadDisposition::NoExistingArchive;
@@ -316,14 +318,22 @@ public:
     [[nodiscard]] virtual std::size_t journalTransactions() const = 0;
 };
 
-class EchoArchiveStore final : public IArchiveStore {
+class IArchiveStoreFactory {
 public:
-    explicit EchoArchiveStore(std::filesystem::path directory);
-    // implements IArchiveStore
+    virtual ~IArchiveStoreFactory() = default;
+    [[nodiscard]] virtual std::unique_ptr<IArchiveStore> create(EchoLevelContext const&) const = 0;
 };
+
+class EchoArchiveStoreFactory final : public IArchiveStoreFactory {
+public:
+    explicit EchoArchiveStoreFactory(std::filesystem::path baseDirectory);
+    [[nodiscard]] std::unique_ptr<IArchiveStore> create(EchoLevelContext const&) const override;
+};
+
+[[nodiscard]] std::unique_ptr<IArchiveStoreFactory> makeGeodeArchiveStoreFactory();
 ```
 
-Path names within the existing per-level directory:
+For context key `K`, new storage lives in `<save>/echo_dash/K/`:
 
 ```text
 archive.bin
@@ -332,60 +342,127 @@ archive.journal
 archive.bin.tmp
 ```
 
+Legacy lookup remains `<save>/echo_dash/K.edar` and `K.edar.bak`; these are read compatibility inputs and are not deleted automatically.
+
 - [ ] **Step 1: Write temporary-directory load/recovery tests**
 
-Cover no files, valid schema1 primary, invalid primary + valid backup, valid primary + newer journal commit, partial journal tail, both snapshots invalid + context-matching journal from revision 1, journal for a different context, and preservation of rejected source artifacts.
+Cover no files, legacy schema1 primary, legacy invalid primary + valid legacy backup, valid schema2 primary, valid primary + newer journal, partial tail, snapshot failure + context-matching journal from revision1, mismatched-context journal, and rejected-artifact preservation.
 
 - [ ] **Step 2: Prove RED**
 
-Expected compile failure before `IArchiveStore`/`EchoArchiveStore` exist.
+- [ ] **Step 3: Implement durable append/flush**
 
-- [ ] **Step 3: Implement durable append/flush primitives**
-
-On Windows use Win32 `CreateFileW` with append/write-through semantics plus `FlushFileBuffers` (or an equivalently strong explicit durable path). Return structured errors; do not throw through gameplay code. Non-Windows standard-library fallback is testable but not runtime-certified by v1.1.3.
+On Windows use `CreateFileW`/append plus `FlushFileBuffers` or equivalently strong explicit durable operations. Return structured results; no exceptions escape into gameplay code. Non-Windows fallback is testable but not v1.1.3 runtime-certified.
 
 - [ ] **Step 4: Add schema-2 snapshot framing**
 
-Header contains 8-byte `ECHOSNP2`, schema `2`, snapshot revision, context fingerprint plus serialized context identity, bounded payload length, and CRC32. Payload encodes complete `ArchivedAttempt` entries, including explicit replay state. `decodeArchiveSnapshot` continues detecting schema1/schema2.
+Header: magic `ECHOSNP2`, schema 2, snapshot revision, context fingerprint + serialized context identity, bounded payload length, CRC32. Payload encodes immutable archive entries including replay state. Decoder still reads schema1.
 
-- [ ] **Step 5: Implement deterministic load hierarchy**
+- [ ] **Step 5: Implement deterministic recovery hierarchy**
 
-1. Structurally valid primary wins; semantic-invalid units are quarantined while unrelated valid units load.
-2. Structurally invalid primary -> try backup.
-3. Replay valid journal records with matching context fingerprint and revision strictly newer than selected snapshot.
-4. Duplicate/out-of-order revisions are quarantined/rejected, never reordered by guesswork.
-5. With no usable snapshot, journal-only recovery is allowed only when the first applicable transaction is revision `1`, context fingerprint matches, and its record can construct a valid empty-base archive image.
-6. Otherwise return `Unrecoverable` and leave files untouched.
+1. valid new primary;
+2. new backup if primary structurally invalid;
+3. legacy schema1 primary/backup only when no usable new snapshot exists;
+4. replay matching-context journal revisions strictly newer than selected snapshot/legacy base;
+5. duplicate/out-of-order revisions quarantine/reject, never reorder;
+6. journal-only recovery requires first applicable revision 1 and valid empty-base context;
+7. unrecoverable leaves all files untouched.
+
+A structurally valid primary with semantic-invalid units loads unrelated valid units and reports quarantine rather than silently preferring a different semantic state from backup.
 
 - [ ] **Step 6: Implement compaction promotion**
 
-Write/flush `archive.bin.tmp`, decode it again and require exact intended context/revision, preserve and hash/verify current valid primary as `.bak`, promote temp with durable replacement, then reopen/validate primary. Do not discard represented journal records until the promoted primary has been reread successfully. Any failure leaves the prior snapshot+journal authority recoverable.
+Write/flush temp, decode and require exact intended context/revision, preserve/hash current valid primary as backup, promote temp durably, reopen/validate primary, then compact journal records <= snapshot revision. Any failure keeps prior recoverable snapshot+journal authority. Legacy `.edar` is retained until a future separately approved cleanup policy.
 
-- [ ] **Step 7: Prove GREEN and commit**
+- [ ] **Step 7: Wire production factory only at Geode boundary**
+
+`main.cpp`/integration initializes `EchoReplayArchive` with `makeGeodeArchiveStoreFactory()`. Core tests inject fake factories; pure store/codec code never calls `Mod::get()`.
+
+- [ ] **Step 8: Prove GREEN and commit**
 
 ```bash
-git add src/EchoDurableFileOps.* src/EchoArchiveStore.* src/EchoArchiveCodec.* tests/cpp/test_archive_store.cpp CMakeLists.txt
+git add src/EchoDurableFileOps.* src/EchoArchiveStore* src/EchoArchiveCodec.* src/main.cpp tests/cpp/test_archive_store.cpp CMakeLists.txt
 git commit -m "feat: add durable ECHO_DASH archive store"
 ```
 
 ---
 
-### Task 4: Make `EchoReplayArchive` structurally atomic and revision-aware
+### Task 4: Add bounded pending-durability reservation/ledger
 
 **Files:**
-- Modify: `src/EchoReplayArchive.hpp/.cpp`
-- Create: `tests/cpp/test_replay_archive_durability.cpp`
-- Modify: callers that currently iterate `summaries()`/`replays()` directly.
+- Create: `src/EchoPendingDurability.hpp/.cpp`
+- Create: `tests/cpp/test_pending_durability.cpp`
 - Modify: `CMakeLists.txt`
 
 **Interfaces:**
 
 ```cpp
-enum class ReplayCommitDisposition : std::uint8_t {
-    Durable,
-    PendingDurability,
-    Rejected
+struct PendingReservation {
+    std::uint64_t token = 0;
+    std::size_t bytes = 0;
+    bool valid = false;
 };
+
+struct DetachedPendingCommit {
+    std::uint64_t acceptedSequence = 0;
+    PendingReservation reservation;
+    EchoLevelContext context;
+    JournalAttemptCommit transaction;
+};
+
+class EchoPendingDurabilityLedger final {
+public:
+    static constexpr std::size_t kMaxPendingAttempts = 16;
+    static constexpr std::size_t kMaxPendingBytes = 128ull * 1024ull * 1024ull;
+
+    [[nodiscard]] std::optional<PendingReservation> reserve(std::size_t estimatedBytes);
+    void release(PendingReservation reservation);
+    [[nodiscard]] bool detach(
+        PendingReservation reservation,
+        EchoLevelContext const& context,
+        JournalAttemptCommit transaction
+    );
+    [[nodiscard]] std::size_t pendingAttempts() const;
+    [[nodiscard]] std::size_t pendingBytes() const;
+    [[nodiscard]] std::vector<std::size_t> pendingIndicesForContext(EchoLevelContext const&) const;
+    [[nodiscard]] DetachedPendingCommit const* at(std::size_t index) const;
+    void erase(std::size_t index);
+};
+```
+
+Implementation uses a fixed-capacity `std::array<std::optional<DetachedPendingCommit>, 16>` for detached entries. Reservations are counter/token operations and allocate no replay storage. `JournalAttemptCommit` shares the immutable `ArchivedAttemptPtr`; detaching a pending attempt does not duplicate replay frames.
+
+- [ ] **Step 1: Write reservation-bound tests**
+
+16 accepted reservations fit if under 128MiB; 17th rejects. Byte limit rejects even before count limit. Release restores capacity. Invalid/double release does not underflow counters.
+
+- [ ] **Step 2: Write detach/move tests**
+
+A reserved transaction detaches into one fixed slot, preserving context/revision/attempt pointer identity. Detach with unknown reservation or mismatched context fingerprint rejects without consuming a slot.
+
+- [ ] **Step 3: Prove RED, implement fixed ledger, prove GREEN**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/EchoPendingDurability.* tests/cpp/test_pending_durability.cpp CMakeLists.txt
+git commit -m "feat: bound ECHO_DASH pending durability"
+```
+
+---
+
+### Task 5: Make `EchoReplayArchive` structurally atomic, ordered, and pending-safe
+
+**Files:**
+- Modify: `src/EchoReplayArchive.hpp/.cpp`
+- Create: `tests/cpp/test_replay_archive_durability.cpp`
+- Modify: callers that iterate old `summaries()`/`replays()` directly.
+- Modify: `CMakeLists.txt`
+
+**Interfaces:**
+
+```cpp
+enum class ReplayCommitDisposition : std::uint8_t { Durable, PendingDurability, Rejected };
 
 struct ReplayCommitResult {
     ReplayCommitDisposition disposition = ReplayCommitDisposition::Rejected;
@@ -404,7 +481,8 @@ struct ReplayArchiveStats {
     std::uint64_t memoryRevision = 0;
     std::uint64_t durableRevision = 0;
     std::uint64_t snapshotRevision = 0;
-    std::size_t pendingDurabilityCount = 0;
+    std::size_t currentContextPendingCount = 0;
+    std::size_t detachedPendingCount = 0;
     bool persistenceDegraded = false;
     bool recoveredFromBackup = false;
     std::size_t quarantinedReplayCount = 0;
@@ -412,49 +490,65 @@ struct ReplayArchiveStats {
 
 class EchoReplayArchive final {
 public:
-    explicit EchoReplayArchive(std::unique_ptr<IArchiveStore> store = {});
-    [[nodiscard]] ReplayCommitResult commit(
-        AttemptRecord const& attempt,
-        AttemptHistoryEntry const& summary
-    );
+    EchoReplayArchive();
+    void setStoreFactory(std::unique_ptr<IArchiveStoreFactory> factory);
+    [[nodiscard]] bool load(EchoLevelContext const& context);
+    [[nodiscard]] ReplayCommitResult commit(AttemptRecord const&, AttemptHistoryEntry const&);
     [[nodiscard]] bool retryPendingDurability();
-    [[nodiscard]] std::deque<ArchivedAttempt> const& attempts() const;
-    // existing replayById/summaryById/latest/best/previous/next queries remain
+    [[nodiscard]] bool prepareContextSwitch();
+    [[nodiscard]] std::deque<ArchivedAttemptPtr> const& attempts() const;
+    // replayById/summaryById/latest/best/previous/next query semantics remain
 };
 ```
 
-Production `load(context)` creates `EchoArchiveStore` when no injected store exists. Native tests inject a fake implementing `IArchiveStore`; no test-only global hooks or `#ifdef TESTING` mutation APIs are introduced.
+Internal rule: an `ArchivedAttemptPtr` is immutable after publication. Retention later replaces a pointer with a newly constructed immutable summary-only value after eviction durability succeeds.
 
-- [ ] **Step 1: Write atomic-entry rejection tests**
+- [ ] **Step 1: Write atomic rejection tests**
 
-Invalid summary, invalid replay, ID mismatch, duplicate attempt, active/unfinalized replay -> `Rejected` with `m_attempts`, memory revision, and pending queue unchanged.
+Invalid summary/replay, ID mismatch, duplicate attempt, active/unfinalized replay -> Rejected with attempts/revisions/pending unchanged.
 
-- [ ] **Step 2: Write durable/pending tests using a fake store**
+- [ ] **Step 2: Write durable/pending tests using fake store/factory**
 
-On success: insert one `ArchivedAttempt{summary,replay,Present}`, append one journal transaction, memory/durable revisions advance to the same value. On injected append failure: the same complete `ArchivedAttempt` is present once in memory, memory revision advances, durable revision does not, and one pending revision/attempt ID is recorded. No summary/replay half-state is representable.
+Before publishing a new attempt, estimate its transaction memory and reserve pending capacity. Construct/compress/validate complete immutable value locally. Insert the pointer into active `m_attempts`; if insertion throws, release reservation and do not append to disk. Then:
 
-- [ ] **Step 3: Write ordered retry tests**
+```text
+no earlier pending revision + append succeeds -> Durable; release reservation; durableRevision = memoryRevision
+append fails -> keep complete in-memory value; ledger reservation remains associated with that revision; PendingDurability
+already has earlier pending for same context -> do not append newer revision ahead of gap; publish complete value as later PendingDurability
+```
 
-Two pending revisions retry oldest first. Durable revision increases monotonically and only successfully flushed transactions leave the pending queue.
+No summary/replay half-state is representable.
 
-- [ ] **Step 4: Replace separate authoritative summary/replay deques with `m_attempts`**
+- [ ] **Step 3: Prove strict retry ordering**
 
-Queries return pointers into `ArchivedAttempt.summary` or optional replay. Replace direct caller iteration with `attempts()` and explicit replay-state handling. Legacy summary-only entries remain visible to death/history restoration while `replayById()` correctly returns null.
+Pending revisions retry oldest-first per context. Revision N+1 is never appended while N remains failed. Successful contiguous retries advance durable revision; failed revision and all later same-context revisions remain pending.
 
-- [ ] **Step 5: Make commit exception-safe before publication**
+- [ ] **Step 4: Replace separate summary/replay deques with immutable entry pointers**
 
-Validate and construct/compress the full `ArchivedAttempt` local value before mutating `m_attempts`. Insertion of that one value is the only logical publication mutation. Record the pending descriptor only after successful insertion. A thrown allocation failure is caught at the archive boundary, returns `Rejected`, and leaves prior authority unchanged.
+Queries access `entry->summary` and optional replay. Legacy summary-only entries remain available for history/death restoration; `replayById` returns null when replay state is not Present.
 
-- [ ] **Step 6: Prove GREEN and commit**
+- [ ] **Step 5: Preserve pending entries across context switch**
+
+`prepareContextSwitch()` requires fleet/replay consumers already released by coordinator. For each current-context pending entry, move its shared transaction/reference into a detached ledger slot using its existing reservation, then clear the active view/store. Because the same immutable pointer is shared, replay bytes are not copied. If an invariant violation prevents detachment, return false and leave old active authority intact; do not silently clear it.
+
+- [ ] **Step 6: Retry detached contexts at safe windows**
+
+Create a store from the factory for each pending context. Within a context, retry revisions in order. Success removes its ledger entry/reservation. Failure leaves it intact and may continue retrying independent contexts; never reorder revisions within one context.
+
+- [ ] **Step 7: Handle pending-budget exhaustion honestly**
+
+When no reservation is available while storage is unhealthy, `commit()` returns Rejected before archive publication; existing accepted pending entries are preserved. Coordinator/diagnostics later surface persistence degraded. Gameplay lifecycle remains live, but the system does not falsely promise replay durability for the rejected run.
+
+- [ ] **Step 8: Prove GREEN and commit**
 
 ```bash
-git add src/EchoReplayArchive.* src/main.cpp src/EchoGhostFleet.* tests/cpp/test_replay_archive_durability.cpp CMakeLists.txt
+git add src/EchoReplayArchive.* src/EchoPendingDurability.* src/main.cpp src/EchoGhostFleet.* tests/cpp/test_replay_archive_durability.cpp CMakeLists.txt
 git commit -m "refactor: make replay archive commits structurally atomic"
 ```
 
 ---
 
-### Task 5: Make retention and compaction explicit maintenance transactions
+### Task 6: Make retention and compaction explicit maintenance transactions
 
 **Files:**
 - Modify: `src/EchoReplayArchive.hpp/.cpp`
@@ -479,26 +573,27 @@ enum class ArchiveMaintenanceResult : std::uint8_t {
 
 - [ ] **Step 1: Write deterministic retention tests**
 
-With a small fake replay limit/budget, compute the eviction set from oldest eligible replay payloads. It must never include a pending-durability entry or violate protected existing Best/Latest semantics. Eviction transitions selected entries from `Present` to `EvictedByRetention`; summaries remain explicit historical records.
+With small limits/budgets, compute oldest eligible replay payloads. Never evict pending durability or protected existing Best/Latest semantics. Eviction creates replacement immutable entries with same summary, null replay, `EvictedByRetention`.
 
 - [ ] **Step 2: Prove eviction durability ordering**
 
-Write `JournalEviction` first. If append fails, memory replay states remain unchanged. Only after durable eviction acceptance may replay payloads be released and frame counts updated.
+Append `JournalEviction` first. On failure, active immutable entries remain unchanged. Only after durable eviction transaction acceptance may replay payload pointers be replaced/released.
 
 - [ ] **Step 3: Write compaction tests**
 
-After several durable journal transactions, `performMaintenance()` builds a schema-2 snapshot with `snapshotRevision == durableRevision`. After successful promotion/reopen, only journal records at or below snapshot revision are compacted away; newer records survive.
+After durable journal transactions, snapshot revision equals durable revision. After promotion/reopen, only journal records <= snapshot revision are compacted away; newer records survive.
 
-- [ ] **Step 4: Implement deterministic maintenance triggers**
+- [ ] **Step 4: Implement triggers only, not frame execution**
 
-Recommend maintenance when either:
+Recommend maintenance when:
 
 ```text
 journal transaction count >= 128
-journal byte size >= 64 MiB
+OR journal byte size >= 64 MiB
+OR retention/disk policy requires eviction
 ```
 
-or current configured retention/disk policy requires eviction. These are triggers only; no maintenance runs automatically in live frame code.
+No maintenance automatically runs in ordinary live frame update.
 
 - [ ] **Step 5: Prove GREEN and commit**
 
@@ -509,7 +604,7 @@ git commit -m "feat: add explicit archive maintenance transactions"
 
 ---
 
-### Task 6: Integrate transactional durability into the runtime coordinator
+### Task 7: Integrate transactional durability into coordinator and context lifecycle
 
 **Files:**
 - Modify: `src/EchoRuntimeCoordinator.hpp/.cpp`
@@ -517,36 +612,38 @@ git commit -m "feat: add explicit archive maintenance transactions"
 - Modify: `src/main.cpp`
 - Modify: `tests/test_v1_1_contract.py`
 
-**Interfaces:**
-- Consumes: `ReplayCommitResult`, `ArchiveMaintenanceResult`.
-- Produces: exactly one coordinator finalization path and zero direct `EchoReplayArchive::save/ingest` policy in `main.cpp`.
+**Interfaces:** consumes `ReplayCommitResult`, `ArchiveMaintenanceResult`, `prepareContextSwitch()`.
 
 - [ ] **Step 1: Add failing source contracts**
 
-Assert `main.cpp` contains no `archive.save()` or `archive.ingest(` lifecycle calls and that finalization routes through `EchoRuntimeCoordinator::finalize`.
+`main.cpp` contains no `archive.save()` or `archive.ingest(` lifecycle policy. Finalization routes only through coordinator/archive `commit`.
 
 - [ ] **Step 2: Implement finalization order**
 
 ```text
 recorder.finalizeAttempt
 -> resolve immutable finalized attempt
--> prepare non-mutating history entry
--> archive.commit(full summary+replay logical unit)
--> if archive logical commit accepted: history.commitPreparedEntry
--> publish session-best/replay/fleet revision consequences
+-> prepare history entry without mutation
+-> archive.commit(complete summary+replay)
+-> if logical archive commit accepted: history.commitPreparedEntry as derived in-memory projection
+-> publish session-best/replay/fleet consequences
 ```
 
-Map `Durable -> AttemptCommitStatus::Committed`, `PendingDurability -> AttemptCommitStatus::PendingDurability`, `Rejected -> AttemptCommitStatus::Rejected`. A persistence failure never causes a duplicate new attempt or duplicate history commit.
+Map Durable -> Committed, PendingDurability -> PendingDurability, Rejected -> Rejected. If derived history projection fails after archive acceptance, reconstruct it from archive summary rather than roll back/delete archive authority.
 
-- [ ] **Step 3: Retry/maintain only at legal safe windows**
+- [ ] **Step 3: Retry/maintain only at safe windows**
 
-Retry pending durability and optionally perform maintenance during pause/Replay Studio idle, after a successful vanilla reset boundary, context switch before old-store release, and level exit. Ordinary Playing `postUpdate` may update bounded persistence health counters only; it may not compact or rewrite historical data.
+Retry pending durability and optionally maintain during pause/Replay Studio idle, after successful reset boundary, context switch before old active view release, and level exit. Ordinary Playing `postUpdate` does not compact/rewrite history.
 
-- [ ] **Step 4: Harden context switch/exit**
+- [ ] **Step 4: Harden context switch**
 
-Release fleet/replay consumers before retention/compaction that can invalidate replay payload addresses. Persistence failure does not indefinitely block vanilla exit; preserve pending state/evidence and report structured health for diagnostics Plan 04.
+Release fleet/replay consumers, call `prepareContextSwitch()` so pending accepted attempts remain in bounded detached ledger, then load new context. Failure to retry old pending does not destroy it and does not indefinitely block vanilla context transition.
 
-- [ ] **Step 5: Prove GREEN and commit**
+- [ ] **Step 5: Harden exit**
+
+Perform one best-effort retry of active/detached pending + safe maintenance within the existing exit boundary. If storage remains unavailable, preserve in-memory pending until process teardown and emit explicit degraded diagnostics later; do not claim durability or block vanilla exit indefinitely.
+
+- [ ] **Step 6: Prove GREEN and commit**
 
 ```bash
 git add src/EchoRuntimeCoordinator.* src/EchoAttemptHistory.cpp src/main.cpp tests/test_v1_1_contract.py
@@ -555,35 +652,37 @@ git commit -m "fix: integrate transactional replay durability"
 
 ---
 
-### Task 7: Add adversarial parser, corruption, and filesystem fault tests
+### Task 8: Add adversarial parser, corruption, ordering, and filesystem fault tests
 
 **Files:**
 - Create: `tests/cpp/test_archive_corruption.cpp`
 - Modify: `tests/cpp/test_replay_journal.cpp`
 - Modify: `tests/cpp/test_archive_store.cpp`
+- Modify: `tests/cpp/test_pending_durability.cpp`
 - Modify: `tests/cpp/test_replay_archive_durability.cpp`
 - Modify: `CMakeLists.txt`
 
-**Interfaces:**
-- Produces: executable evidence for interrupted writes, malformed input, and rollback laws.
+- [ ] **Step 1: Cut journal records at every boundary class**
 
-- [ ] **Step 1: Test record cuts**
+Partial magic/header/payload/footer, exactly after record1/record2. Earlier full commits always survive.
 
-Cut a known two-record journal at every boundary class: partial magic, partial header, partial payload, before checksum-verifiable payload completion, partial footer, exactly after record one, and exactly after record two. Earlier fully committed records always survive.
+- [ ] **Step 2: Mutate semantic fields**
 
-- [ ] **Step 2: Test semantic corruption**
+Sequence zero, NaN time/progress, out-of-bound coordinates, ID mismatch, duplicate attempts/revisions, invalid enums, context fingerprint, oversized counts. Expect bounded reject/quarantine with no partial publication.
 
-Mutate sequence to zero, timestamp/progress to NaN, coordinates beyond validator bounds, summary/replay IDs, duplicate attempt IDs, duplicate/out-of-order revisions, invalid enums, context fingerprint, and oversized counts. Expect bounded reject/quarantine with no partial publication.
+- [ ] **Step 3: Simulate filesystem failure stages**
 
-- [ ] **Step 3: Test filesystem failure stages through fake durable ops/store**
+Append, temp write, flush, backup copy, replacement, post-promotion validation. Failed compaction leaves prior known-good snapshot+journal loadable.
 
-Simulate append failure, temp-write failure, flush failure, backup-copy failure, replacement failure, and post-promotion validation failure. Every failed compaction leaves the prior known-good snapshot+journal loadable.
+- [ ] **Step 4: Test pending gap and context switch**
 
-- [ ] **Step 4: Add deterministic bounded randomized parser test**
+Force revision 5 append failure, accept 6 as pending, then make store healthy: retry must append 5 then 6. Switch contexts while 5/6 pending: old immutable data remains in detached ledger and is later durable. Exhaust 16/128MiB budget: older pending stays intact; additional publication rejects/degrades.
 
-Generate 1,000 pseudo-random byte buffers from a fixed seed. Feed snapshot/journal decode entrypoints. Each call returns a bounded status without crash/exception escape; declared lengths above hard caps are rejected before allocation.
+- [ ] **Step 5: Add deterministic randomized parser test**
 
-- [ ] **Step 5: Run Release and Debug CTest where available**
+1,000 fixed-seed random buffers through snapshot/journal decode; no exception escape/crash/unbounded allocation.
+
+- [ ] **Step 6: Run Release + Debug CTest and commit**
 
 ```powershell
 cmake --build build-core-tests --config Release --target EchoDashCoreTests
@@ -592,26 +691,18 @@ cmake --build build-core-tests --config Debug --target EchoDashCoreTests
 ctest --test-dir build-core-tests -C Debug --output-on-failure
 ```
 
-Expected: zero failures.
-
-- [ ] **Step 6: Commit**
-
 ```bash
-git add tests/cpp/test_archive_corruption.cpp tests/cpp/test_replay_journal.cpp tests/cpp/test_archive_store.cpp tests/cpp/test_replay_archive_durability.cpp CMakeLists.txt
+git add tests/cpp CMakeLists.txt
 git commit -m "test: adversarially verify replay persistence"
 ```
 
 ---
 
-### Task 8: Plan-02 persistence evidence gate
+### Task 9: Plan-02 persistence evidence gate
 
-**Files:**
-- Modify only if verification reveals a defect.
+**Files:** modify only if verification reveals a defect.
 
-**Interfaces:**
-- Produces: terminal durability evidence before Plan 03.
-
-- [ ] **Step 1: Run the complete local test suite**
+- [ ] **Step 1: Run complete local suite**
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
@@ -620,18 +711,18 @@ cmake --build build-core-tests --config Release --target EchoDashCoreTests
 ctest --test-dir build-core-tests -C Release --output-on-failure
 ```
 
-Expected: zero failures.
+Expected zero failures.
 
-- [ ] **Step 2: Re-load the committed v1.1.2 fixture**
+- [ ] **Step 2: Reload committed v1.1.2 fixtures**
 
-Expected: committed fixture SHA still matches Task 1; decode returns `LoadedSchema1` with the expected present replay and summary. Add a migration test containing a schema-1 summary-only case and confirm it remains historical metadata with `LegacySummaryOnly` state.
+Fixture SHA must match Task1. Minimal pair -> LoadedSchema1/Present. Summary-only case -> LegacySummaryOnly. Legacy files are not deleted after migration load.
 
 - [ ] **Step 3: Audit source paths**
 
-Confirm no whole-archive save after each attempt, no compaction/retention in ordinary live `postUpdate`, every new attempt is one `ArchivedAttempt` logical value, pending entries cannot be retention-evicted, and load does not delete rejected evidence.
+No whole archive save per attempt; no compaction/retention in live `postUpdate`; one immutable entry per new attempt; no out-of-order same-context pending append; pending cannot be retention-evicted; context switch cannot silently discard accepted pending; load does not delete rejected evidence.
 
-- [ ] **Step 4: Trigger the pinned Windows Release workflow and wait for terminal completion**
+- [ ] **Step 4: Trigger pinned Windows hardening-dev workflow and wait for terminal completion**
 
-Expected terminal GREEN: Python contracts, native persistence/fault suite, Geode CLI 3.7.4 setup, Geode SDK 5.10.1 setup, Windows Release compile, compiler evidence upload, package collection/upload.
+Expected terminal GREEN for Python/native persistence/fault tests, pinned CLI 3.7.4/SDK 5.10.1, Windows Release compile, compiler evidence, and package upload.
 
-- [ ] **Step 5: Record exact Plan-02 source SHA and workflow run ID. Proceed to Plan 03 only after all evidence is terminal.**
+- [ ] **Step 5: Record exact Plan-02 source SHA/workflow run ID; proceed to Plan 03 only with terminal evidence.**
