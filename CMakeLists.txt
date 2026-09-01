@@ -10,6 +10,9 @@ if (ECHO_DASH_BUILD_CORE_TESTS)
     add_executable(EchoDashCoreTests
         tests/cpp/test_main.cpp
         tests/cpp/test_current_invariants.cpp
+        tests/cpp/test_core_types.cpp
+        tests/cpp/test_time_policy.cpp
+        src/EchoTimePolicy.cpp
     )
     target_include_directories(EchoDashCoreTests PRIVATE src tests/cpp)
     target_compile_features(EchoDashCoreTests PRIVATE cxx_std_23)
