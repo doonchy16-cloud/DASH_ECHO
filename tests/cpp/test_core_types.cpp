@@ -4,9 +4,9 @@
 #include <type_traits>
 
 ECHO_TEST(core_semantic_types_are_not_implicitly_interchangeable) {
-    ECHO_CHECK(!std::is_convertible_v<dash_echo::AttemptId, dash_echo::FrameSequence>);
-    ECHO_CHECK(!std::is_convertible_v<dash_echo::FrameSequence, dash_echo::AttemptId>);
-    ECHO_CHECK(!std::is_convertible_v<dash_echo::ReplayTime, dash_echo::NormalizedCursor>);
+    ECHO_CHECK((!std::is_convertible_v<dash_echo::AttemptId, dash_echo::FrameSequence>));
+    ECHO_CHECK((!std::is_convertible_v<dash_echo::FrameSequence, dash_echo::AttemptId>));
+    ECHO_CHECK((!std::is_convertible_v<dash_echo::ReplayTime, dash_echo::NormalizedCursor>));
 }
 
 ECHO_TEST(core_semantic_types_preserve_explicit_values) {
