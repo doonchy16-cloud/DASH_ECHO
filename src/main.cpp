@@ -26,7 +26,7 @@ using namespace geode::prelude;
 namespace {
 
 constexpr char const* kReleaseName = "ECHO_DASH";
-constexpr char const* kReleaseVersion = "v1.1.2";
+constexpr char const* kReleaseVersion = "v1.1.3";
 
 dash_echo::ColorRGB toEchoColor(cocos2d::ccColor3B const& color) {
     return dash_echo::ColorRGB {
@@ -403,7 +403,7 @@ class $modify(EchoDashPlayLayer, PlayLayer) {
         auto const archive = m_fields->archive.stats();
         auto const recorder = m_fields->recorder.stats();
         m_fields->diagnosticsLabel->setString(fmt::format(
-            "ECHO_DASH 1.1.2 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | recovery {} quarantine {} | session {} frames @ {:.0f}Hz",
+            "ECHO_DASH 1.1.3 | ghosts {}/{} pool {} | archive {} replays / {} summaries / {} frames | recovery {} quarantine {} | session {} frames @ {:.0f}Hz",
             fleet.assignedGhosts,
             fleet.configuredGhostLimit,
             fleet.allocatedGhostSlots,
