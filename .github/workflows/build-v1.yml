@@ -24,6 +24,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -m unittest tests.test_v1_1_contract tests.test_release_assets -v
 
+      - name: Run ECHO_DASH native core tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item Env:GEODE_SDK -ErrorAction SilentlyContinue
+          cmake -S . -B build-core-tests -DECHO_DASH_BUILD_CORE_TESTS=ON
+          cmake --build build-core-tests --config Release --target EchoDashCoreTests
+          ctest --test-dir build-core-tests -C Release --output-on-failure
+
       - name: Install pinned Geode CLI 3.7.4
         shell: pwsh
         run: |
